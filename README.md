@@ -18,10 +18,9 @@ https://github.com/123-harvecraft/trunk-lang
     * Embeded
     * Wasm
     * Command Line
-* Artificial Int
-    * A. Intelligent
-
-
+    * Artificial Inte System
+    * Bind Block
+      
 ## Notes
 Documentation |
 Code of Conduct |
