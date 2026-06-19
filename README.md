@@ -1,5 +1,5 @@
 
-## Trn Lang: An Dev to C/C++ base
+## Trnk Lang: An Dev to C/C++ base
 
 ## Public version
 
