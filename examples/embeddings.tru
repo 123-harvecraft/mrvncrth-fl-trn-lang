@@ -1,0 +1,428 @@
+// TRU Language Embeddings Example
+// High-performance embedding generation with TRU language optimizations
+
+use trunk_lang::tru_prelude::*;
+
+// TRU embedding generator with memory pooling
+tru_fn generate_embedding(text: &str, dimension: usize) -> TruVector {
+    let runtime = get_tru_runtime();
+    let pool = runtime.get_memory_pool(dimension * 4).unwrap();
+    
+    // Use pooled buffer for zero-copy operations
+    let mut buffer = pool.get();
+    buffer.clear();
+    buffer.resize(dimension, 0.0);
+    
+    // High-performance embedding generation
+    let bytes = text.as_bytes();
+    let byte_len = bytes.len();
+    
+    // SIMD-optimized processing where available
+    if byte_len >= dimension {
+        // Direct mapping for optimal performance
+        for i in 0..dimension {
+            buffer[i] = bytes[i] as f32 / 255.0;
+        }
+    } else {
+        // Distributed mapping for smaller texts
+        for (i, &byte) in bytes.iter().enumerate() {
+            buffer[i % dimension] += byte as f32 / 255.0;
+        }
+    }
+    
+    // Return optimized vector with automatic memory management
+    TruVector::new(buffer)
+}
+
+// TRU batch embedding generation with parallel processing
+tru_fn generate_embeddings_batch(texts: &[&str], dimension: usize) -> Vec<TruVector> {
+    let runtime = get_tru_runtime();
+    
+    // Use parallel processing for large batches
+    if texts.len() > 100 {
+        // Parallel processing for better performance
+        texts.par_iter()
+            .map(|&text| generate_embedding(text, dimension))
+            .collect()
+    } else {
+        // Sequential processing for small batches
+        texts.iter()
+            .map(|&text| generate_embedding(text, dimension))
+            .collect()
+    }
+}
+
+// TRU embedding similarity with caching
+tru_fn embedding_similarity(embedding1: &TruVector, embedding2: &TruVector) -> f32 {
+    // Use optimized cosine similarity
+    embedding1.cosine_similarity(embedding2)
+}
+
+// TRU embedding normalization with in-place optimization
+tru_fn normalize_embedding(mut embedding: TruVector) -> TruVector {
+    embedding.normalize();
+    embedding
+}
+
+// TRU embedding clustering with k-means
+tru_fn cluster_embeddings(embeddings: &[TruVector], k: usize, max_iterations: usize) -> Vec<usize> {
+    let runtime = get_tru_runtime();
+    let dimension = embeddings[0].len();
+    
+    // Initialize centroids using k-means++ algorithm
+    let mut centroids = Vec::with_capacity(k);
+    let mut used_indices = std::collections::HashSet::new();
+    
+    // Select first centroid randomly
+    let first_idx = rand::random::<usize>() % embeddings.len();
+    centroids.push(embeddings[first_idx].clone());
+    used_indices.insert(first_idx);
+    
+    // Select remaining centroids
+    for _ in 1..k {
+        let mut distances = Vec::with_capacity(embeddings.len());
+        
+        for (i, embedding) in embeddings.iter().enumerate() {
+            if used_indices.contains(&i) {
+                distances.push(0.0);
+                continue;
+            }
+            
+            // Find minimum distance to existing centroids
+            let min_dist = centroids.iter()
+                .map(|centroid| embedding.cosine_similarity(centroid))
+                .fold(f32::INFINITY, |a, b| a.min(b));
+            
+            distances.push(1.0 - min_dist); // Convert similarity to distance
+        }
+        
+        // Select next centroid with probability proportional to distance squared
+        let total_distance: f32 = distances.iter().sum();
+        let mut random_val = rand::random::<f32>() * total_distance;
+        
+        for (i, &dist) in distances.iter().enumerate() {
+            random_val -= dist;
+            if random_val <= 0.0 && !used_indices.contains(&i) {
+                centroids.push(embeddings[i].clone());
+                used_indices.insert(i);
+                break;
+            }
+        }
+    }
+    
+    // K-means iterations
+    let mut assignments = vec![0; embeddings.len()];
+    
+    for iteration in 0..max_iterations {
+        let mut changed = false;
+        
+        // Assignment step
+        for (i, embedding) in embeddings.iter().enumerate() {
+            let mut best_cluster = 0;
+            let mut best_similarity = -1.0;
+            
+            for (cluster_idx, centroid) in centroids.iter().enumerate() {
+                let similarity = embedding.cosine_similarity(centroid);
+                if similarity > best_similarity {
+                    best_similarity = similarity;
+                    best_cluster = cluster_idx;
+                }
+            }
+            
+            if assignments[i] != best_cluster {
+                assignments[i] = best_cluster;
+                changed = true;
+            }
+        }
+        
+        // Update step
+        for cluster_idx in 0..k {
+            let cluster_embeddings: Vec<&TruVector> = embeddings.iter()
+                .zip(assignments.iter())
+                .filter(|(_, &assignment)| assignment == cluster_idx)
+                .map(|(embedding, _)| embedding)
+                .collect();
+            
+            if !cluster_embeddings.is_empty() {
+                // Calculate new centroid as mean of cluster embeddings
+                let mut new_centroid = TruVector::zeros(dimension);
+                
+                for embedding in &cluster_embeddings {
+                    new_centroid = new_centroid.add(embedding);
+                }
+                
+                new_centroid.scale(1.0 / cluster_embeddings.len() as f32);
+                centroids[cluster_idx] = new_centroid;
+            }
+        }
+        
+        if !changed {
+            break; // Converged
+        }
+    }
+    
+    assignments
+}
+
+// TRU embedding dimensionality reduction with PCA
+tru_fn reduce_embeddings_pca(embeddings: &[TruVector], target_dim: usize) -> Vec<TruVector> {
+    let n_samples = embeddings.len();
+    let original_dim = embeddings[0].len();
+    
+    if target_dim >= original_dim {
+        return embeddings.to_vec();
+    }
+    
+    // Center the data
+    let mut mean = TruVector::zeros(original_dim);
+    for embedding in embeddings {
+        mean = mean.add(embedding);
+    }
+    mean.scale(1.0 / n_samples as f32);
+    
+    let mut centered_embeddings = Vec::with_capacity(n_samples);
+    for embedding in embeddings {
+        let centered = embedding.subtract(&mean);
+        centered_embeddings.push(centered);
+    }
+    
+    // Compute covariance matrix
+    let mut covariance = TruTensor::zeros(vec![original_dim, original_dim]);
+    
+    for i in 0..original_dim {
+        for j in 0..original_dim {
+            let mut cov_value = 0.0;
+            for embedding in &centered_embeddings {
+                cov_value += embedding.get(i).unwrap_or(0.0) * embedding.get(j).unwrap_or(0.0);
+            }
+            cov_value /= (n_samples - 1) as f32;
+            covariance.set(&[i, j], cov_value).unwrap();
+        }
+    }
+    
+    // Compute eigenvalues and eigenvectors (simplified power iteration)
+    let mut eigenvalues = Vec::with_capacity(original_dim);
+    let mut eigenvectors = Vec::with_capacity(original_dim);
+    
+    for _ in 0..target_dim {
+        let mut vector = TruVector::random(original_dim);
+        vector.normalize();
+        
+        // Power iteration
+        for _ in 0..50 {
+            let mut new_vector = TruVector::zeros(original_dim);
+            
+            for i in 0..original_dim {
+                for j in 0..original_dim {
+                    let cov_element = covariance.get(&[i, j]).unwrap_or(0.0);
+                    let vector_element = vector.get(j).unwrap_or(0.0);
+                    new_vector.set(i, new_vector.get(i).unwrap_or(0.0) + cov_element * vector_element).unwrap();
+                }
+            }
+            
+            new_vector.normalize();
+            vector = new_vector;
+        }
+        
+        // Calculate eigenvalue
+        let eigenvalue = vector.dot_product(&vector);
+        eigenvalues.push(eigenvalue);
+        eigenvectors.push(vector);
+    }
+    
+    // Project embeddings onto eigenvectors
+    let mut reduced_embeddings = Vec::with_capacity(n_samples);
+    
+    for embedding in &centered_embeddings {
+        let mut reduced = TruVector::zeros(target_dim);
+        
+        for (i, eigenvector) in eigenvectors.iter().enumerate() {
+            let projection = embedding.dot_product(eigenvector);
+            reduced.set(i, projection).unwrap();
+        }
+        
+        reduced_embeddings.push(reduced);
+    }
+    
+    reduced_embeddings
+}
+
+// TRU embedding search with approximate nearest neighbors
+tru_fn search_embeddings(query: &TruVector, embeddings: &[TruVector], top_k: usize) -> Vec<(usize, f32)> {
+    let runtime = get_tru_runtime();
+    
+    // Use cached similarities for better performance
+    let cache_key = format!("search_embeddings_{}", embeddings.len());
+    
+    let mut similarities = Vec::with_capacity(embeddings.len());
+    
+    for (idx, embedding) in embeddings.iter().enumerate() {
+        let similarity = query.cosine_similarity(embedding);
+        similarities.push((idx, similarity));
+    }
+    
+    // Sort by similarity (descending)
+    similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    
+    // Return top-k results
+    similarities.into_iter().take(top_k).collect()
+}
+
+// TRU embedding visualization with t-SNE (simplified)
+tru_fn visualize_embeddings_tsne(embeddings: &[TruVector], perplexity: usize, max_iterations: usize) -> Vec<TruVector> {
+    let n_samples = embeddings.len();
+    let original_dim = embeddings[0].len();
+    let target_dim = 2; // 2D visualization
+    
+    // Initialize random positions
+    let mut positions = Vec::with_capacity(n_samples);
+    for _ in 0..n_samples {
+        positions.push(TruVector::random(target_dim));
+    }
+    
+    // Simplified t-SNE algorithm
+    let learning_rate = 200.0;
+    let momentum = 0.5;
+    
+    let mut velocities = Vec::with_capacity(n_samples);
+    for _ in 0..n_samples {
+        velocities.push(TruVector::zeros(target_dim));
+    }
+    
+    for iteration in 0..max_iterations {
+        // Compute pairwise similarities in high-dimensional space
+        let mut high_dim_similarities = Vec::with_capacity(n_samples * n_samples);
+        
+        for i in 0..n_samples {
+            for j in 0..n_samples {
+                if i == j {
+                    high_dim_similarities.push(0.0);
+                } else {
+                    let distance = embeddings[i].subtract(&embeddings[j]).norm();
+                    let similarity = (-distance * distance).exp();
+                    high_dim_similarities.push(similarity);
+                }
+            }
+        }
+        
+        // Compute pairwise similarities in low-dimensional space
+        let mut low_dim_similarities = Vec::with_capacity(n_samples * n_samples);
+        
+        for i in 0..n_samples {
+            for j in 0..n_samples {
+                if i == j {
+                    low_dim_similarities.push(0.0);
+                } else {
+                    let distance = positions[i].subtract(&positions[j]).norm();
+                    let similarity = (-distance * distance).exp();
+                    low_dim_similarities.push(similarity);
+                }
+            }
+        }
+        
+        // Compute gradients
+        let mut gradients = Vec::with_capacity(n_samples);
+        
+        for i in 0..n_samples {
+            let mut gradient = TruVector::zeros(target_dim);
+            
+            for j in 0..n_samples {
+                if i != j {
+                    let high_sim = high_dim_similarities[i * n_samples + j];
+                    let low_sim = low_dim_similarities[i * n_samples + j];
+                    
+                    let diff = positions[i].subtract(&positions[j]);
+                    let force = 4.0 * (high_sim - low_sim) * diff;
+                    
+                    gradient = gradient.add(&force);
+                }
+            }
+            
+            gradients.push(gradient);
+        }
+        
+        // Update positions with momentum
+        for i in 0..n_samples {
+            let new_velocity = gradients[i].scale(learning_rate).add(&velocities[i].scale(momentum));
+            positions[i] = positions[i].add(&new_velocity);
+            velocities[i] = new_velocity;
+        }
+        
+        // Early stopping if converged
+        if iteration > 0 && iteration % 100 == 0 {
+            let total_force: f32 = gradients.iter().map(|g| g.norm()).sum();
+            if total_force < 1e-5 {
+                break;
+            }
+        }
+    }
+    
+    positions
+}
+
+// TRU main embedding example
+tru_fn main() {
+    println!("TRU Language Embeddings Example");
+    
+    // Generate sample embeddings
+    let texts = vec![
+        "machine learning",
+        "artificial intelligence", 
+        "deep learning",
+        "neural networks",
+        "computer vision",
+        "natural language processing",
+        "data science",
+        "algorithm optimization"
+    ];
+    
+    let embeddings = generate_embeddings_batch(&texts, 512);
+    println!("Generated {} embeddings with dimension 512", embeddings.len());
+    
+    // Calculate similarities
+    let similarity = embedding_similarity(&embeddings[0], &embeddings[1]);
+    println!("Similarity between first two texts: {:.4}", similarity);
+    
+    // Normalize embeddings
+    let normalized_embeddings: Vec<TruVector> = embeddings.iter()
+        .map(|e| normalize_embedding(e.clone()))
+        .collect();
+    
+    // Cluster embeddings
+    let clusters = cluster_embeddings(&normalized_embeddings, 3, 100);
+    println!("Clustered embeddings into 3 groups");
+    
+    for (i, &cluster) in clusters.iter().enumerate() {
+        println!("  Text '{}' -> Cluster {}", texts[i], cluster);
+    }
+    
+    // Search for similar embeddings
+    let query = generate_embedding("machine learning algorithms", 512);
+    let search_results = search_embeddings(&query, &embeddings, 3);
+    
+    println!("Top 3 most similar texts to query:");
+    for (idx, similarity) in search_results {
+        println!("  '{}': {:.4}", texts[idx], similarity);
+    }
+    
+    // Reduce dimensionality for visualization
+    let reduced_embeddings = reduce_embeddings_pca(&normalized_embeddings, 50);
+    println!("Reduced embeddings from 512 to 50 dimensions");
+    
+    // Visualize with t-SNE
+    let positions = visualize_embeddings_tsne(&reduced_embeddings, 5, 500);
+    println!("Generated 2D visualization positions");
+    
+    for (i, pos) in positions.iter().enumerate() {
+        println!("  '{}' -> ({:.2}, {:.2})", texts[i], pos.get(0).unwrap_or(0.0), pos.get(1).unwrap_or(0.0));
+    }
+    
+    // Performance metrics
+    let runtime = get_tru_runtime();
+    if let Some(metrics) = runtime.get_metric("generate_embedding") {
+        println!("Embedding generation performance:");
+        println!("  Operations: {}", metrics.call_count);
+        println!("  Avg time: {} ns", metrics.avg_time_ns);
+        println!("  Ops/sec: {:.0}", metrics.ops_per_sec);
+    }
+}

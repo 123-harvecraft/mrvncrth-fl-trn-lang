@@ -1,0 +1,188 @@
+// tru_lang/mod.tru
+// Public API for the TRU Language pipeline
+// Port of src/tru_lang/mod.rs -> Trn Lang syntax
+
+use std::io;
+use std::collections;
+
+// ─── Language Constants ────────────────────────────────────────────────────────
+
+let TRU_VERSION    = "0.1.0";
+let TRU_EXTENSION  = "tru";
+let TRU_CRATE_NAME = "tru_id_core";
+
+// ─── Error Types ──────────────────────────────────────────────────────────────
+
+struct TruError {
+    pub phase:   str,
+    pub message: str,
+    pub line:    int,
+}
+
+fn tru_error(phase: str, msg: str, line: int) -> TruError {
+    return TruError { phase: phase, message: msg, line: line };
+}
+
+fn tru_error_lex(msg: str, line: int)     -> TruError { return tru_error("lex",     msg, line); }
+fn tru_error_parse(msg: str, line: int)   -> TruError { return tru_error("parse",   msg, line); }
+fn tru_error_runtime(msg: str, line: int) -> TruError { return tru_error("runtime", msg, line); }
+fn tru_error_io(msg: str)                 -> TruError { return tru_error("io",      msg, 0);    }
+
+fn tru_error_display(e: TruError) -> str {
+    if e.line > 0 {
+        return "[" + e.phase + " error] line " + e.line + ": " + e.message;
+    }
+    return "[" + e.phase + " error] " + e.message;
+}
+
+// ─── High-Level API ───────────────────────────────────────────────────────────
+
+fn run_source(source: str) -> str {
+    let tokens = tokenize_source(source);
+    let stmts  = parse_tokens(tokens);
+    let result = interpret_stmts(stmts);
+    return result;
+}
+
+fn run_file(path: str) -> str {
+    let source = io::read_file(path);
+    if source == "" {
+        return "[io error] could not read file: " + path;
+    }
+    return run_source(source);
+}
+
+fn transpile_source(source: str) -> str {
+    return compile_source_to_rust(source);
+}
+
+fn transpile_file(path: str) -> str {
+    let source = io::read_file(path);
+    if source == "" {
+        return "";
+    }
+    return transpile_source(source);
+}
+
+fn transpile_to_rs(path: str) -> str {
+    let out_path = str::replace(path, ".tru", ".rs");
+    let rust_src = transpile_file(path);
+    io::write_file(str::clone(out_path), rust_src);
+    return out_path;
+}
+
+// ─── Pipeline Stubs ───────────────────────────────────────────────────────────
+// Each of these delegates to the corresponding module's implementation.
+// In the full build, lexer.tru / parser.tru / interpreter.tru / compiler.tru
+// are compiled together via `trn-pkg build`.
+
+fn tokenize_source(source: str) -> [str] {
+    let mut tokens = [];
+    let lines = str::split(source, "\n");
+    let mut i = 0;
+    while i < collections::len(lines) {
+        collections::push(tokens, str::trim(lines[i]));
+        i += 1;
+    }
+    return tokens;
+}
+
+fn parse_tokens(tokens: [str]) -> [str] {
+    return tokens;
+}
+
+fn interpret_stmts(stmts: [str]) -> str {
+    let mut last = "";
+    let mut i = 0;
+    while i < collections::len(stmts) {
+        let s = str::trim(stmts[i]);
+        if s != "" && !str::starts_with(s, "//") {
+            last = s;
+        }
+        i += 1;
+    }
+    return last;
+}
+
+fn compile_source_to_rust(source: str) -> str {
+    let mut out = "#![allow(unused)]\nfn main() {\n";
+    let lines = str::split(source, "\n");
+    let mut i = 0;
+    while i < collections::len(lines) {
+        let line = str::trim(lines[i]);
+        if line != "" && !str::starts_with(line, "//") {
+            out = out + "    // " + line + "\n";
+        }
+        i += 1;
+    }
+    out = out + "}\n";
+    return out;
+}
+
+// ─── REPL ─────────────────────────────────────────────────────────────────────
+
+struct TruRepl {
+    pub history: [str],
+    pub session: int,
+}
+
+fn repl_new() -> TruRepl {
+    return TruRepl { history: [], session: 0 };
+}
+
+fn repl_eval(mut r: TruRepl, line: str) -> str {
+    collections::push(r.history, str::clone(line));
+    r.session += 1;
+    return run_source(line);
+}
+
+fn repl_run(mut r: TruRepl) {
+    io::println("tru_id v" + TRU_VERSION + " REPL  (type 'exit' to quit)");
+
+    let mut running = true;
+    while running {
+        io::print("tru> ");
+        let line = io::read_line();
+        let trimmed = str::trim(line);
+
+        if trimmed == "exit" || trimmed == "quit" {
+            running = false;
+        } else if trimmed == "" {
+            // skip
+        } else if trimmed == ":version" {
+            io::println("tru_id v" + TRU_VERSION);
+        } else if trimmed == ":help" {
+            io::println("Commands: :version  :history  exit");
+        } else if trimmed == ":history" {
+            let mut i = 0;
+            while i < collections::len(r.history) {
+                io::println(i + ": " + r.history[i]);
+                i += 1;
+            }
+        } else {
+            collections::push(r.history, str::clone(trimmed));
+            r.session += 1;
+            let result = run_source(trimmed);
+            if result != "" {
+                io::println("= " + result);
+            }
+        }
+    }
+
+    io::println("bye.");
+}
+
+// ─── Describe ─────────────────────────────────────────────────────────────────
+
+fn describe() -> str {
+    return "tru_id v" + TRU_VERSION + " — TRU Language\n" +
+           "Extension : ." + TRU_EXTENSION + "\n" +
+           "Crate     : " + TRU_CRATE_NAME + "\n" +
+           "Paradigms : imperative, functional, struct-based\n" +
+           "Backend   : tree-walk interpreter + Rust transpiler\n" +
+           "Stdlib    : math, io, str, arr, sys";
+}
+
+fn main() {
+    io::println(describe());
+}

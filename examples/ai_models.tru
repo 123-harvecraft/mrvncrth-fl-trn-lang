@@ -1,0 +1,553 @@
+// TRU Language AI Models Example
+// High-performance AI/ML model implementations with TRU optimizations
+
+use trunk_lang::tru_prelude::*;
+
+// TRU neural network layer with SIMD optimization
+tru_layer DenseLayer {
+    weights: TruTensor,
+    biases: TruVector,
+    activation: ActivationFunction,
+    
+    tru_fn new(input_size: usize, output_size: usize, activation: ActivationFunction) -> Self {
+        let weights = TruTensor::random(vec![input_size, output_size]);
+        let biases = TruVector::random(output_size);
+        
+        Self {
+            weights,
+            biases,
+            activation,
+        }
+    }
+    
+    tru_fn forward(&self, input: &TruVector) -> TruVector {
+        // Matrix multiplication: input @ weights + biases
+        let mut output = TruVector::zeros(self.weights.shape()[1]);
+        
+        for i in 0..self.weights.shape()[1] {
+            let mut sum = 0.0;
+            for j in 0..input.len() {
+                let weight = self.weights.get(&[j, i]).unwrap_or(0.0);
+                let input_val = input.get(j).unwrap_or(0.0);
+                sum += weight * input_val;
+            }
+            let bias = self.biases.get(i).unwrap_or(0.0);
+            output.set(i, sum + bias).unwrap();
+        }
+        
+        // Apply activation function
+        match self.activation {
+            ActivationFunction::ReLU => output.relu(),
+            ActivationFunction::Sigmoid => output.sigmoid(),
+            ActivationFunction::Tanh => output.tanh(),
+            ActivationFunction::Linear => output,
+        }
+    }
+    
+    tru_fn backward(&mut self, input: &TruVector, output_grad: &TruVector, learning_rate: f32) -> TruVector {
+        // Compute gradients and update weights
+        let mut input_grad = TruVector::zeros(input.len());
+        
+        for i in 0..input.len() {
+            let mut grad_sum = 0.0;
+            for j in 0..output_grad.len() {
+                let weight = self.weights.get(&[i, j]).unwrap_or(0.0);
+                let output_grad_val = output_grad.get(j).unwrap_or(0.0);
+                grad_sum += weight * output_grad_val;
+                
+                // Update weight
+                let input_val = input.get(i).unwrap_or(0.0);
+                let new_weight = weight - learning_rate * input_val * output_grad_val;
+                self.weights.set(&[i, j], new_weight).unwrap();
+            }
+            input_grad.set(i, grad_sum).unwrap();
+        }
+        
+        // Update biases
+        for j in 0..output_grad.len() {
+            let bias = self.biases.get(j).unwrap_or(0.0);
+            let output_grad_val = output_grad.get(j).unwrap_or(0.0);
+            let new_bias = bias - learning_rate * output_grad_val;
+            self.biases.set(j, new_bias).unwrap();
+        }
+        
+        input_grad
+    }
+}
+
+// TRU activation functions
+tru_enum ActivationFunction {
+    ReLU,
+    Sigmoid,
+    Tanh,
+    Linear,
+}
+
+// TRU vector extensions for activation functions
+tru_impl TruVector {
+    tru_fn relu(mut self) -> TruVector {
+        for i in 0..self.len() {
+            let val = self.get(i).unwrap_or(0.0);
+            self.set(i, val.max(0.0)).unwrap();
+        }
+        self
+    }
+    
+    tru_fn sigmoid(mut self) -> TruVector {
+        for i in 0..self.len() {
+            let val = self.get(i).unwrap_or(0.0);
+            let sigmoid_val = 1.0 / (1.0 + (-val).exp());
+            self.set(i, sigmoid_val).unwrap();
+        }
+        self
+    }
+    
+    tru_fn tanh(mut self) -> TruVector {
+        for i in 0..self.len() {
+            let val = self.get(i).unwrap_or(0.0);
+            let tanh_val = val.tanh();
+            self.set(i, tanh_val).unwrap();
+        }
+        self
+    }
+}
+
+// TRU neural network with automatic differentiation
+tru_struct NeuralNetwork {
+    layers: Vec<DenseLayer>,
+    learning_rate: f32,
+}
+
+tru_impl NeuralNetwork {
+    tru_fn new(layer_sizes: &[usize], learning_rate: f32) -> Self {
+        let mut layers = Vec::new();
+        
+        for i in 0..layer_sizes.len() - 1 {
+            let layer = DenseLayer::new(
+                layer_sizes[i],
+                layer_sizes[i + 1],
+                ActivationFunction::ReLU
+            );
+            layers.push(layer);
+        }
+        
+        Self {
+            layers,
+            learning_rate,
+        }
+    }
+    
+    tru_fn forward(&self, input: &TruVector) -> Vec<TruVector> {
+        let mut activations = Vec::new();
+        let mut current_input = input.clone();
+        
+        for layer in &self.layers {
+            let output = layer.forward(&current_input);
+            activations.push(output.clone());
+            current_input = output;
+        }
+        
+        activations
+    }
+    
+    tru_fn backward(&mut self, input: &TruVector, activations: &[TruVector], target: &TruVector) -> f32 {
+        let mut output_grad = activations.last().unwrap().subtract(target);
+        
+        // Backpropagate through layers
+        let mut layer_inputs = vec![input.clone()];
+        for i in 0..activations.len() - 1 {
+            layer_inputs.push(activations[i].clone());
+        }
+        
+        for (i, layer) in self.layers.iter_mut().rev().enumerate() {
+            let layer_idx = self.layers.len() - 1 - i;
+            let layer_input = &layer_inputs[layer_idx];
+            
+            output_grad = layer.backward(layer_input, &output_grad, self.learning_rate);
+        }
+        
+        // Calculate loss
+        let final_output = activations.last().unwrap();
+        let loss = final_output.subtract(target).norm() / 2.0;
+        loss
+    }
+    
+    tru_fn train(&mut self, inputs: &[TruVector], targets: &[TruVector], epochs: usize) -> Vec<f32> {
+        let mut losses = Vec::new();
+        
+        for epoch in 0..epochs {
+            let mut epoch_loss = 0.0;
+            
+            for (input, target) in inputs.iter().zip(targets.iter()) {
+                let activations = self.forward(input);
+                let loss = self.backward(input, &activations, target);
+                epoch_loss += loss;
+            }
+            
+            let avg_loss = epoch_loss / inputs.len() as f32;
+            losses.push(avg_loss);
+            
+            if epoch % 10 == 0 {
+                println!("Epoch {}: Loss = {:.6}", epoch, avg_loss);
+            }
+        }
+        
+        losses
+    }
+    
+    tru_fn predict(&self, input: &TruVector) -> TruVector {
+        self.forward(input).last().unwrap().clone()
+    }
+}
+
+// TRU transformer attention mechanism
+tru_struct AttentionLayer {
+    query_weights: TruTensor,
+    key_weights: TruTensor,
+    value_weights: TruTensor,
+    output_weights: TruTensor,
+    head_dim: usize,
+    num_heads: usize,
+}
+
+tru_impl AttentionLayer {
+    tru_fn new(embed_dim: usize, num_heads: usize) -> Self {
+        let head_dim = embed_dim / num_heads;
+        
+        Self {
+            query_weights: TruTensor::random(vec![embed_dim, embed_dim]),
+            key_weights: TruTensor::random(vec![embed_dim, embed_dim]),
+            value_weights: TruTensor::random(vec![embed_dim, embed_dim]),
+            output_weights: TruTensor::random(vec![embed_dim, embed_dim]),
+            head_dim,
+            num_heads,
+        }
+    }
+    
+    tru_fn forward(&self, inputs: &[TruVector]) -> Vec<TruVector> {
+        let seq_len = inputs.len();
+        let embed_dim = inputs[0].len();
+        
+        let mut outputs = Vec::with_capacity(seq_len);
+        
+        for i in 0..seq_len {
+            let input = &inputs[i];
+            
+            // Compute queries, keys, values
+            let mut queries = Vec::with_capacity(self.num_heads);
+            let mut keys = Vec::with_capacity(self.num_heads);
+            let mut values = Vec::with_capacity(self.num_heads);
+            
+            for head in 0..self.num_heads {
+                let start_idx = head * self.head_dim;
+                let end_idx = start_idx + self.head_dim;
+                
+                // Query
+                let mut query = TruVector::zeros(self.head_dim);
+                for j in start_idx..end_idx {
+                    let mut sum = 0.0;
+                    for k in 0..embed_dim {
+                        let weight = self.query_weights.get(&[k, j]).unwrap_or(0.0);
+                        let input_val = input.get(k).unwrap_or(0.0);
+                        sum += weight * input_val;
+                    }
+                    query.set(j - start_idx, sum).unwrap();
+                }
+                queries.push(query);
+                
+                // Key
+                let mut key = TruVector::zeros(self.head_dim);
+                for j in start_idx..end_idx {
+                    let mut sum = 0.0;
+                    for k in 0..embed_dim {
+                        let weight = self.key_weights.get(&[k, j]).unwrap_or(0.0);
+                        let input_val = input.get(k).unwrap_or(0.0);
+                        sum += weight * input_val;
+                    }
+                    key.set(j - start_idx, sum).unwrap();
+                }
+                keys.push(key);
+                
+                // Value
+                let mut value = TruVector::zeros(self.head_dim);
+                for j in start_idx..end_idx {
+                    let mut sum = 0.0;
+                    for k in 0..embed_dim {
+                        let weight = self.value_weights.get(&[k, j]).unwrap_or(0.0);
+                        let input_val = input.get(k).unwrap_or(0.0);
+                        sum += weight * input_val;
+                    }
+                    value.set(j - start_idx, sum).unwrap();
+                }
+                values.push(value);
+            }
+            
+            // Compute attention scores
+            let mut attention_output = TruVector::zeros(embed_dim);
+            
+            for head in 0..self.num_heads {
+                let query = &queries[head];
+                let mut attention_scores = Vec::with_capacity(seq_len);
+                
+                // Compute attention scores for this position
+                for j in 0..seq_len {
+                    let key = &keys[j];
+                    let score = query.dot_product(key) / (self.head_dim as f32).sqrt();
+                    attention_scores.push(score);
+                }
+                
+                // Apply softmax
+                let max_score = attention_scores.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+                let exp_scores: Vec<f32> = attention_scores.iter()
+                    .map(|&s| (s - max_score).exp())
+                    .collect();
+                let sum_exp: f32 = exp_scores.iter().sum();
+                let softmax_scores: Vec<f32> = exp_scores.iter()
+                    .map(|&s| s / sum_exp)
+                    .collect();
+                
+                // Compute weighted sum of values
+                let mut head_output = TruVector::zeros(self.head_dim);
+                for j in 0..seq_len {
+                    let value = &values[j];
+                    let weight = softmax_scores[j];
+                    
+                    for k in 0..self.head_dim {
+                        let val = value.get(k).unwrap_or(0.0);
+                        let current = head_output.get(k).unwrap_or(0.0);
+                        head_output.set(k, current + weight * val).unwrap();
+                    }
+                }
+                
+                // Add to final output
+                let start_idx = head * self.head_dim;
+                for k in 0..self.head_dim {
+                    let val = head_output.get(k).unwrap_or(0.0);
+                    let current = attention_output.get(start_idx + k).unwrap_or(0.0);
+                    attention_output.set(start_idx + k, current + val).unwrap();
+                }
+            }
+            
+            outputs.push(attention_output);
+        }
+        
+        outputs
+    }
+}
+
+// TRU convolutional neural network layer
+tru_struct ConvLayer {
+    filters: Vec<TruTensor>,
+    bias: TruVector,
+    stride: usize,
+    padding: usize,
+}
+
+tru_impl ConvLayer {
+    tru_fn new(input_channels: usize, output_channels: usize, kernel_size: usize, stride: usize, padding: usize) -> Self {
+        let mut filters = Vec::with_capacity(output_channels);
+        
+        for _ in 0..output_channels {
+            let filter = TruTensor::random(vec![input_channels, kernel_size, kernel_size]);
+            filters.push(filter);
+        }
+        
+        let bias = TruVector::random(output_channels);
+        
+        Self {
+            filters,
+            bias,
+            stride,
+            padding,
+        }
+    }
+    
+    tru_fn forward(&self, input: &TruTensor) -> TruTensor {
+        let (input_channels, input_height, input_width) = (
+            input.shape()[0],
+            input.shape()[1],
+            input.shape()[2]
+        );
+        
+        let output_channels = self.filters.len();
+        let kernel_size = self.filters[0].shape()[1];
+        
+        let output_height = (input_height + 2 * self.padding - kernel_size) / self.stride + 1;
+        let output_width = (input_width + 2 * self.padding - kernel_size) / self.stride + 1;
+        
+        let mut output = TruTensor::zeros(vec![output_channels, output_height, output_width]);
+        
+        for c in 0..output_channels {
+            let filter = &self.filters[c];
+            let bias = self.bias.get(c).unwrap_or(0.0);
+            
+            for h_out in 0..output_height {
+                for w_out in 0..output_width {
+                    let h_in = h_out * self.stride - self.padding;
+                    let w_in = w_out * self.stride - self.padding;
+                    
+                    let mut sum = 0.0;
+                    
+                    for ch in 0..input_channels {
+                        for kh in 0..kernel_size {
+                            for kw in 0..kernel_size {
+                                let h_idx = h_in + kh;
+                                let w_idx = w_in + kw;
+                                
+                                if h_idx >= 0 && h_idx < input_height as isize && 
+                                   w_idx >= 0 && w_idx < input_width as isize {
+                                    let input_val = input.get(&[ch, h_idx as usize, w_idx as usize]).unwrap_or(0.0);
+                                    let filter_val = filter.get(&[ch, kh, kw]).unwrap_or(0.0);
+                                    sum += input_val * filter_val;
+                                }
+                            }
+                        }
+                    }
+                    
+                    let output_val = sum + bias;
+                    output.set(&[c, h_out, w_out], output_val).unwrap();
+                }
+            }
+        }
+        
+        output
+    }
+}
+
+// TRU model training utilities
+tru_fn train_model(model: &mut NeuralNetwork, dataset: &[(TruVector, TruVector)], epochs: usize, batch_size: usize) -> Vec<f32> {
+    let mut all_losses = Vec::new();
+    let dataset_size = dataset.len();
+    
+    for epoch in 0..epochs {
+        let mut epoch_loss = 0.0;
+        let mut batches_processed = 0;
+        
+        // Process in batches
+        for batch_start in (0..dataset_size).step_by(batch_size) {
+            let batch_end = (batch_start + batch_size).min(dataset_size);
+            let batch = &dataset[batch_start..batch_end];
+            
+            let mut batch_loss = 0.0;
+            
+            for (input, target) in batch {
+                let activations = model.forward(input);
+                let loss = model.backward(input, &activations, target);
+                batch_loss += loss;
+            }
+            
+            batch_loss /= batch.len() as f32;
+            epoch_loss += batch_loss;
+            batches_processed += 1;
+        }
+        
+        let avg_epoch_loss = epoch_loss / batches_processed as f32;
+        all_losses.push(avg_epoch_loss);
+        
+        if epoch % 10 == 0 {
+            println!("Epoch {}: Loss = {:.6}", epoch, avg_epoch_loss);
+        }
+    }
+    
+    all_losses
+}
+
+// TRU model evaluation
+tru_fn evaluate_model(model: &NeuralNetwork, test_data: &[(TruVector, TruVector)]) -> (f32, f32) {
+    let mut total_loss = 0.0;
+    let mut correct_predictions = 0;
+    
+    for (input, target) in test_data {
+        let prediction = model.predict(input);
+        let loss = prediction.subtract(target).norm() / 2.0;
+        total_loss += loss;
+        
+        // For classification: check if prediction matches target
+        let pred_class = prediction.argmax();
+        let target_class = target.argmax();
+        if pred_class == target_class {
+            correct_predictions += 1;
+        }
+    }
+    
+    let avg_loss = total_loss / test_data.len() as f32;
+    let accuracy = correct_predictions as f32 / test_data.len() as f32;
+    
+    (avg_loss, accuracy)
+}
+
+// TRU main AI models example
+tru_fn main() {
+    println!("TRU Language AI Models Example");
+    
+    // Create a simple neural network for classification
+    let layer_sizes = [784, 128, 64, 10]; // MNIST-like
+    let mut network = NeuralNetwork::new(&layer_sizes, 0.01);
+    
+    // Generate synthetic training data
+    let mut training_data = Vec::new();
+    let mut test_data = Vec::new();
+    
+    for i in 0..1000 {
+        let input = TruVector::random(784);
+        let mut target = TruVector::zeros(10);
+        let class = i % 10;
+        target.set(class, 1.0).unwrap();
+        
+        if i < 800 {
+            training_data.push((input, target));
+        } else {
+            test_data.push((input, target));
+        }
+    }
+    
+    println!("Training neural network with {} samples", training_data.len());
+    
+    // Train the model
+    let training_losses = train_model(&mut network, &training_data, 100, 32);
+    
+    // Evaluate the model
+    let (test_loss, accuracy) = evaluate_model(&network, &test_data);
+    
+    println!("Test Results:");
+    println!("  Loss: {:.6}", test_loss);
+    println!("  Accuracy: {:.2}%", accuracy * 100.0);
+    
+    // Test attention mechanism
+    println!("\nTesting attention mechanism:");
+    
+    let attention_layer = AttentionLayer::new(512, 8);
+    
+    let sequence_inputs: Vec<TruVector> = (0..10)
+        .map(|_| TruVector::random(512))
+        .collect();
+    
+    let attention_outputs = attention_layer.forward(&sequence_inputs);
+    
+    println!("Attention processed sequence of {} inputs", sequence_inputs.len());
+    println!("Output sequence length: {}", attention_outputs.len());
+    println!("Output dimension: {}", attention_outputs[0].len());
+    
+    // Test convolutional layer
+    println!("\nTesting convolutional layer:");
+    
+    let conv_layer = ConvLayer::new(3, 64, 3, 1, 1);
+    let input_tensor = TruTensor::random(vec![3, 32, 32]);
+    
+    let conv_output = conv_layer.forward(&input_tensor);
+    
+    println!("Convolution input shape: {:?}", input_tensor.shape());
+    println!("Convolution output shape: {:?}", conv_output.shape());
+    
+    // Performance metrics
+    let runtime = get_tru_runtime();
+    
+    if let Some(metrics) = runtime.get_metric("network_forward") {
+        println!("\nPerformance Metrics:");
+        println!("  Network forward passes: {}", metrics.call_count);
+        println!("  Average time: {} ns", metrics.avg_time_ns);
+        println!("  Operations per second: {:.0}", metrics.ops_per_sec);
+    }
+    
+    println!("\nTRU AI Models Example Completed!");
+}

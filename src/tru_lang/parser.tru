@@ -1,0 +1,228 @@
+// tru_lang/parser.tru
+// Recursive-descent parser for the TRU Language
+// Port of src/tru_lang/parser.rs -> Trn Lang syntax
+
+use std::io;
+use std::collections;
+
+// ─── AST Node Types (string tags) ─────────────────────────────────────────────
+
+let NODE_PROGRAM  = "Program";
+let NODE_FN       = "Fn";
+let NODE_LET      = "Let";
+let NODE_RETURN   = "Return";
+let NODE_IF       = "If";
+let NODE_WHILE    = "While";
+let NODE_FOR      = "For";
+let NODE_ASSIGN   = "Assign";
+let NODE_CALL     = "Call";
+let NODE_BINOP    = "BinOp";
+let NODE_UNOP     = "UnOp";
+let NODE_IDENT    = "Ident";
+let NODE_INT      = "Int";
+let NODE_FLOAT    = "Float";
+let NODE_STR      = "Str";
+let NODE_BOOL     = "Bool";
+let NODE_NIL      = "Nil";
+let NODE_STRUCT   = "Struct";
+let NODE_ENUM     = "Enum";
+let NODE_MATCH    = "Match";
+let NODE_BLOCK    = "Block";
+let NODE_FIELD    = "Field";
+let NODE_INDEX    = "Index";
+let NODE_ARRAY    = "Array";
+let NODE_PATH     = "Path";
+
+// ─── AST Node ─────────────────────────────────────────────────────────────────
+
+struct AstNode {
+    pub kind:   str,
+    pub name:   str,
+    pub value:  str,
+    pub left:   str,
+    pub right:  str,
+    pub line:   int,
+}
+
+fn ast_node(kind: str, name: str, value: str, line: int) -> AstNode {
+    return AstNode {
+        kind:  kind,
+        name:  name,
+        value: value,
+        left:  "",
+        right: "",
+        line:  line,
+    };
+}
+
+// ─── Parser State ─────────────────────────────────────────────────────────────
+
+struct ParserState {
+    pub source:  str,
+    pub pos:     int,
+    pub errors:  int,
+}
+
+fn parser_new(source: str) -> ParserState {
+    return ParserState { source: source, pos: 0, errors: 0 };
+}
+
+// ─── Parse: Top Level ─────────────────────────────────────────────────────────
+
+fn parse_program(source: str) -> [AstNode] {
+    let mut nodes = [];
+    let mut lines = str::split(source, "\n");
+    let mut i = 0;
+
+    while i < collections::len(lines) {
+        let line    = str::trim(lines[i]);
+        let linenum = i + 1;
+
+        if str::starts_with(line, "fn ") {
+            let node = parse_fn_decl(line, linenum);
+            collections::push(nodes, node);
+        } else if str::starts_with(line, "let ") {
+            let node = parse_let_stmt(line, linenum);
+            collections::push(nodes, node);
+        } else if str::starts_with(line, "pub fn ") {
+            let node = parse_fn_decl(line, linenum);
+            collections::push(nodes, node);
+        } else if str::starts_with(line, "struct ") {
+            let node = parse_struct_decl(line, linenum);
+            collections::push(nodes, node);
+        } else if str::starts_with(line, "enum ") {
+            let node = parse_enum_decl(line, linenum);
+            collections::push(nodes, node);
+        } else if str::starts_with(line, "use ") {
+            let node = ast_node(NODE_PATH, str::clone(line), line, linenum);
+            collections::push(nodes, node);
+        } else if line == "" {
+            // skip blank lines
+        } else if str::starts_with(line, "//") {
+            // skip comments
+        } else {
+            let node = parse_expr_stmt(line, linenum);
+            collections::push(nodes, node);
+        }
+
+        i += 1;
+    }
+
+    return nodes;
+}
+
+// ─── Parse: fn declaration ────────────────────────────────────────────────────
+
+fn parse_fn_decl(line: str, linenum: int) -> AstNode {
+    let name = extract_fn_name(str::clone(line));
+    return ast_node(NODE_FN, name, line, linenum);
+}
+
+fn extract_fn_name(line: str) -> str {
+    let after_fn = str::replace(line, "pub fn ", "");
+    let after_fn2 = str::replace(after_fn, "fn ", "");
+    let paren_pos = str::index_of(after_fn2, "(");
+    if paren_pos >= 0 {
+        return str::slice(after_fn2, 0, paren_pos);
+    }
+    return after_fn2;
+}
+
+// ─── Parse: let statement ─────────────────────────────────────────────────────
+
+fn parse_let_stmt(line: str, linenum: int) -> AstNode {
+    let without_let = str::replace(line, "let mut ", "");
+    let without_let2 = str::replace(without_let, "let ", "");
+    let wl2_len = str::len(without_let2);
+    let eq_pos  = str::index_of(without_let2, "=");
+    let mut name = "";
+    let mut val  = "";
+    if eq_pos >= 0 {
+        name = str::trim(str::slice(str::clone(without_let2), 0, eq_pos));
+        val  = str::trim(str::slice(without_let2, eq_pos + 1, wl2_len));
+    } else {
+        name = without_let2;
+    }
+    let colon_pos = str::index_of(name, ":");
+    if colon_pos >= 0 {
+        name = str::trim(str::slice(str::clone(name), 0, colon_pos));
+    }
+    let val2 = str::replace(val, ";", "");
+    return AstNode {
+        kind:  NODE_LET,
+        name:  name,
+        value: val2,
+        left:  "",
+        right: "",
+        line:  linenum,
+    };
+}
+
+// ─── Parse: struct declaration ────────────────────────────────────────────────
+
+fn parse_struct_decl(line: str, linenum: int) -> AstNode {
+    let after_struct = str::replace(line, "pub struct ", "");
+    let after_struct2 = str::replace(after_struct, "struct ", "");
+    let brace_pos = str::index_of(after_struct2, "{");
+    let mut name = "";
+    if brace_pos >= 0 {
+        name = str::trim(str::slice(str::clone(after_struct2), 0, brace_pos));
+    } else {
+        name = after_struct2;
+    }
+    return ast_node(NODE_STRUCT, name, line, linenum);
+}
+
+// ─── Parse: enum declaration ──────────────────────────────────────────────────
+
+fn parse_enum_decl(line: str, linenum: int) -> AstNode {
+    let after_enum = str::replace(line, "pub enum ", "");
+    let after_enum2 = str::replace(after_enum, "enum ", "");
+    let brace_pos = str::index_of(after_enum2, "{");
+    let mut name = "";
+    if brace_pos >= 0 {
+        name = str::trim(str::slice(str::clone(after_enum2), 0, brace_pos));
+    } else {
+        name = after_enum2;
+    }
+    return ast_node(NODE_ENUM, name, line, linenum);
+}
+
+// ─── Parse: expression statement ──────────────────────────────────────────────
+
+fn parse_expr_stmt(line: str, linenum: int) -> AstNode {
+    let clean = str::replace(line, ";", "");
+
+    if str::contains(clean, "::") {
+        return ast_node(NODE_CALL, str::clone(clean), clean, linenum);
+    }
+    if str::contains(clean, "(") {
+        let paren = str::index_of(clean, "(");
+        let name  = str::slice(str::clone(clean), 0, paren);
+        return ast_node(NODE_CALL, name, clean, linenum);
+    }
+    if str::contains(clean, "return ") {
+        let val = str::replace(clean, "return ", "");
+        return ast_node(NODE_RETURN, "", val, linenum);
+    }
+
+    return ast_node(NODE_IDENT, str::clone(clean), clean, linenum);
+}
+
+// ─── AST Printer ──────────────────────────────────────────────────────────────
+
+fn print_ast(nodes: [AstNode]) {
+    let mut i = 0;
+    while i < collections::len(nodes) {
+        let n = nodes[i];
+        io::println("[" + n.kind + "] name=" + n.name + " value=" + n.value + " line=" + n.line);
+        i += 1;
+    }
+}
+
+fn main() {
+    let src = "fn add(a: int, b: int) -> int {\n    return a + b;\n}\nlet x = 10;\nlet y = 20;\nio::println(add(x, y));";
+    let nodes = parse_program(src);
+    io::println("Parsed " + collections::len(nodes) + " top-level nodes:");
+    print_ast(nodes);
+}

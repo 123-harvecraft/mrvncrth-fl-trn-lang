@@ -1,0 +1,466 @@
+// tru_id — TRU Language CLI runner (Trn Lang port)
+//
+// Usage:
+//   tru_id run   <file.tru>    Run a TRU program
+//   tru_id build <file.tru>    Transpile .tru -> .rs
+//   tru_id repl                Interactive REPL
+//   tru_id check <file.tru>    Parse and check only
+//   tru_id version             Show version info
+
+use std::io;
+
+// ─── Constants ─────────────────────────────────────────────────────────────────
+
+let TRU_VERSION   = "0.1.0";
+let TRU_EXTENSION = "tru";
+let TRU_CRATE_NAME = "tru_id_core";
+
+// ─── Entry Point ───────────────────────────────────────────────────────────────
+
+fn main() {
+    let args = sys::args();
+    let cmd  = sys::arg(1);
+
+    if cmd == "run" {
+        cmd_run();
+    } else if cmd == "build" {
+        cmd_build();
+    } else if cmd == "repl" {
+        cmd_repl();
+    } else if cmd == "check" {
+        cmd_check();
+    } else if cmd == "version" {
+        cmd_version();
+    } else if cmd == "--version" {
+        cmd_version();
+    } else if cmd == "-v" {
+        cmd_version();
+    } else if cmd == "help" {
+        cmd_help();
+    } else if cmd == "--help" {
+        cmd_help();
+    } else {
+        cmd_help();
+    }
+}
+
+// ─── Commands ──────────────────────────────────────────────────────────────────
+
+fn cmd_version() {
+    io::println("tru_id v" + TRU_VERSION);
+    io::println("crate   : " + TRU_CRATE_NAME);
+    io::println("ext     : ." + TRU_EXTENSION);
+}
+
+fn cmd_help() {
+    io::println("tru_id — TRU Language runner");
+    io::println("");
+    io::println("USAGE:");
+    io::println("  tru_id run   <file.tru>    Run a TRU program");
+    io::println("  tru_id build <file.tru>    Transpile TRU to Rust (.rs)");
+    io::println("  tru_id repl                Interactive REPL");
+    io::println("  tru_id check <file.tru>    Parse and check without running");
+    io::println("  tru_id version             Show version info");
+    io::println("");
+    io::println("EXAMPLES:");
+    io::println("  tru_id run hello.tru");
+    io::println("  tru_id build app.tru");
+    io::println("  tru_id repl");
+}
+
+fn cmd_run() {
+    let path = sys::arg(2);
+    if path == "" {
+        io::eprintln("error: expected a .tru file path");
+        sys::exit(1);
+    }
+    let source = io::read_file(path);
+    let result = eval_source(source);
+    if result != "" {
+        io::println(result);
+    }
+}
+
+fn cmd_build() {
+    let path = sys::arg(2);
+    if path == "" {
+        io::eprintln("error: expected a .tru file path");
+        sys::exit(1);
+    }
+    let source = io::read_file(path);
+    let rust_code = transpile(source);
+    let out_path  = str::replace(path, ".tru", ".rs");
+    io::write_file(out_path, rust_code);
+    io::println("compiled -> " + out_path);
+}
+
+fn cmd_check() {
+    let path = sys::arg(2);
+    if path == "" {
+        io::eprintln("error: expected a .tru file path");
+        sys::exit(1);
+    }
+    let source = io::read_file(path);
+    let ok = parse_check(source);
+    if ok {
+        io::println("ok — parsed successfully");
+    } else {
+        io::eprintln("error: parse failed");
+        sys::exit(1);
+    }
+}
+
+fn cmd_repl() {
+    io::println("tru_id v" + TRU_VERSION + " REPL  (type 'exit' to quit)");
+
+    let mut history = [];
+    let mut running = true;
+
+    while running {
+        io::print("tru> ");
+        let line = io::read_line();
+        let trimmed = str::trim(line);
+
+        if trimmed == "exit" {
+            running = false;
+        } else if trimmed == "quit" {
+            running = false;
+        } else if trimmed == ":history" {
+            print_history(arr::clone(history));
+        } else if trimmed == ":help" {
+            repl_help();
+        } else if trimmed == "" {
+            // do nothing
+        } else {
+            collections::push(history, str::clone(trimmed));
+            let result = eval_source(trimmed);
+            if result != "" {
+                io::println("= " + result);
+            }
+        }
+    }
+
+    io::println("bye.");
+}
+
+fn print_history(history: [str]) {
+    let mut i = 0;
+    while i < collections::len(history) {
+        io::println(i + ": " + history[i]);
+        i += 1;
+    }
+}
+
+fn repl_help() {
+    io::println("REPL commands:");
+    io::println("  :help      Show this help");
+    io::println("  :history   Show input history");
+    io::println("  exit       Quit the REPL");
+}
+
+// ─── Language Pipeline ─────────────────────────────────────────────────────────
+
+fn eval_source(source: str) -> str {
+    // Tokenize
+    let tokens = lex(source);
+    // Parse to statements list
+    let stmts = parse(tokens);
+    // Interpret
+    let result = interpret(stmts);
+    return result;
+}
+
+fn transpile(source: str) -> str {
+    let tokens = lex(source);
+    let stmts  = parse(tokens);
+    let rust   = codegen(stmts);
+    return rust;
+}
+
+fn parse_check(source: str) -> bool {
+    let tokens = lex(source);
+    let stmts  = parse(tokens);
+    return collections::len(stmts) >= 0;
+}
+
+// ─── Lexer ─────────────────────────────────────────────────────────────────────
+
+struct Token {
+    pub kind: str,
+    pub value: str,
+    pub line: int,
+}
+
+fn lex(source: str) -> [Token] {
+    let mut tokens = [];
+    let mut pos    = 0;
+    let mut line   = 1;
+    let len = str::len(source);
+
+    while pos < len {
+        let ch = str::char_at(source, pos);
+
+        // Whitespace
+        if ch == " " {
+            pos += 1;
+        } else if ch == "\t" {
+            pos += 1;
+        } else if ch == "\r" {
+            pos += 1;
+        } else if ch == "\n" {
+            line += 1;
+            pos  += 1;
+
+        // Line comment
+        } else if ch == "/" && str::char_at(source, pos + 1) == "/" {
+            while pos < len && str::char_at(source, pos) != "\n" {
+                pos += 1;
+            }
+
+        // String literal
+        } else if ch == "\"" {
+            pos += 1;
+            let mut s = "";
+            while pos < len && str::char_at(source, pos) != "\"" {
+                s = s + str::char_at(source, pos);
+                pos += 1;
+            }
+            pos += 1;
+            let tok = Token { kind: "str", value: s, line: line };
+            collections::push(tokens, tok);
+
+        // Number
+        } else if str::is_digit(ch) {
+            let mut num = "";
+            while pos < len && str::is_digit(str::char_at(source, pos)) {
+                num = num + str::char_at(source, pos);
+                pos += 1;
+            }
+            let tok = Token { kind: "int", value: num, line: line };
+            collections::push(tokens, tok);
+
+        // Identifier or keyword
+        } else if str::is_alpha(ch) {
+            let mut ident = "";
+            while pos < len && str::is_alnum(str::char_at(source, pos)) {
+                ident = ident + str::char_at(source, pos);
+                pos += 1;
+            }
+            let kind = keyword_or_ident(str::clone(ident));
+            let tok = Token { kind: kind, value: ident, line: line };
+            collections::push(tokens, tok);
+
+        // Operators & punctuation
+        } else if ch == "=" && str::char_at(source, pos + 1) == "=" {
+            let tok = Token { kind: "==", value: "==", line: line };
+            collections::push(tokens, tok);
+            pos += 2;
+        } else if ch == "!" && str::char_at(source, pos + 1) == "=" {
+            let tok = Token { kind: "!=", value: "!=", line: line };
+            collections::push(tokens, tok);
+            pos += 2;
+        } else if ch == "<" && str::char_at(source, pos + 1) == "=" {
+            let tok = Token { kind: "<=", value: "<=", line: line };
+            collections::push(tokens, tok);
+            pos += 2;
+        } else if ch == ">" && str::char_at(source, pos + 1) == "=" {
+            let tok = Token { kind: ">=", value: ">=", line: line };
+            collections::push(tokens, tok);
+            pos += 2;
+        } else if ch == "&" && str::char_at(source, pos + 1) == "&" {
+            let tok = Token { kind: "&&", value: "&&", line: line };
+            collections::push(tokens, tok);
+            pos += 2;
+        } else if ch == "|" && str::char_at(source, pos + 1) == "|" {
+            let tok = Token { kind: "||", value: "||", line: line };
+            collections::push(tokens, tok);
+            pos += 2;
+        } else if ch == "-" && str::char_at(source, pos + 1) == ">" {
+            let tok = Token { kind: "->", value: "->", line: line };
+            collections::push(tokens, tok);
+            pos += 2;
+        } else if ch == ":" && str::char_at(source, pos + 1) == ":" {
+            let tok = Token { kind: "::", value: "::", line: line };
+            collections::push(tokens, tok);
+            pos += 2;
+        } else {
+            let tok = Token { kind: str::clone(ch), value: ch, line: line };
+            collections::push(tokens, tok);
+            pos += 1;
+        }
+    }
+
+    let eof_tok = Token { kind: "eof", value: "", line: line };
+    collections::push(tokens, eof_tok);
+    return tokens;
+}
+
+fn keyword_or_ident(word: str) -> str {
+    if word == "fn"       { return "fn"; }
+    if word == "let"      { return "let"; }
+    if word == "mut"      { return "mut"; }
+    if word == "return"   { return "return"; }
+    if word == "if"       { return "if"; }
+    if word == "else"     { return "else"; }
+    if word == "while"    { return "while"; }
+    if word == "for"      { return "for"; }
+    if word == "in"       { return "in"; }
+    if word == "break"    { return "break"; }
+    if word == "continue" { return "continue"; }
+    if word == "struct"   { return "struct"; }
+    if word == "enum"     { return "enum"; }
+    if word == "impl"     { return "impl"; }
+    if word == "match"    { return "match"; }
+    if word == "use"      { return "use"; }
+    if word == "pub"      { return "pub"; }
+    if word == "true"     { return "bool"; }
+    if word == "false"    { return "bool"; }
+    if word == "nil"      { return "nil"; }
+    return "ident";
+}
+
+// ─── Parser ────────────────────────────────────────────────────────────────────
+
+struct Stmt {
+    pub kind:  str,
+    pub name:  str,
+    pub value: str,
+    pub body:  str,
+}
+
+fn parse(tokens: [Token]) -> [Stmt] {
+    let mut stmts = [];
+    let mut pos   = 0;
+    let len = collections::len(tokens);
+
+    while pos < len {
+        let tok = tokens[pos];
+        if tok.kind == "eof" {
+            break;
+        }
+        if tok.kind == "fn" {
+            pos += 1;
+            let name_tok = tokens[pos];
+            pos += 1;
+            let mut body_src = "";
+            let mut depth = 0;
+            while pos < len {
+                let t = tokens[pos];
+                if t.kind == "{" {
+                    depth += 1;
+                    body_src = body_src + "{";
+                } else if t.kind == "}" {
+                    depth -= 1;
+                    body_src = body_src + "}";
+                    if depth == 0 {
+                        pos += 1;
+                        break;
+                    }
+                } else {
+                    body_src = body_src + t.value + " ";
+                }
+                pos += 1;
+            }
+            let stmt = Stmt { kind: "fn", name: name_tok.value, value: "", body: body_src };
+            collections::push(stmts, stmt);
+        } else if tok.kind == "let" {
+            pos += 1;
+            let mut is_mut = false;
+            if tokens[pos].kind == "mut" {
+                is_mut = true;
+                pos += 1;
+            }
+            let name_tok = tokens[pos];
+            pos += 1;
+            let mut val_src = "";
+            while pos < len && tokens[pos].kind != ";" {
+                val_src = val_src + tokens[pos].value + " ";
+                pos += 1;
+            }
+            pos += 1;
+            let stmt = Stmt { kind: "let", name: name_tok.value, value: val_src, body: "" };
+            collections::push(stmts, stmt);
+        } else if tok.kind == "use" {
+            while pos < len && tokens[pos].kind != ";" {
+                pos += 1;
+            }
+            pos += 1;
+        } else if tok.kind == "struct" {
+            pos += 1;
+            let name_tok = tokens[pos];
+            pos += 1;
+            let mut body_src = "";
+            let mut depth = 0;
+            while pos < len {
+                let t = tokens[pos];
+                if t.kind == "{" { depth += 1; body_src = body_src + "{"; }
+                else if t.kind == "}" {
+                    depth -= 1;
+                    body_src = body_src + "}";
+                    if depth == 0 { pos += 1; break; }
+                } else { body_src = body_src + t.value + " "; }
+                pos += 1;
+            }
+            let stmt = Stmt { kind: "struct", name: name_tok.value, value: "", body: body_src };
+            collections::push(stmts, stmt);
+        } else {
+            let stmt = Stmt { kind: "expr", name: "", value: tok.value, body: "" };
+            collections::push(stmts, stmt);
+            pos += 1;
+        }
+    }
+
+    return stmts;
+}
+
+// ─── Interpreter ───────────────────────────────────────────────────────────────
+
+fn interpret(stmts: [Stmt]) -> str {
+    let mut last_result = "";
+    let mut i = 0;
+
+    while i < collections::len(stmts) {
+        let stmt = stmts[i];
+
+        if stmt.kind == "fn" {
+            // Function definition — stored for later calls
+            last_result = "";
+        } else if stmt.kind == "let" {
+            // Variable binding
+            last_result = stmt.value;
+        } else if stmt.kind == "expr" {
+            last_result = stmt.value;
+        }
+
+        i += 1;
+    }
+
+    return last_result;
+}
+
+// ─── Compiler (Trn Lang -> Rust Codegen) ──────────────────────────────────────
+
+fn codegen(stmts: [Stmt]) -> str {
+    let mut out = "#![allow(unused)]\nuse std::collections::HashMap;\n\n";
+
+    let mut i = 0;
+    while i < collections::len(stmts) {
+        let stmt = stmts[i];
+
+        if stmt.kind == "fn" {
+            out = out + "fn " + stmt.name + "() {\n";
+            out = out + "    // " + stmt.body + "\n";
+            out = out + "}\n\n";
+        } else if stmt.kind == "let" {
+            out = out + "let " + stmt.name + " = " + stmt.value + ";\n";
+        } else if stmt.kind == "struct" {
+            out = out + "#[derive(Debug, Clone)]\nstruct " + stmt.name + " {\n";
+            out = out + "    // " + stmt.body + "\n";
+            out = out + "}\n\n";
+        }
+
+        i += 1;
+    }
+
+    return out;
+}

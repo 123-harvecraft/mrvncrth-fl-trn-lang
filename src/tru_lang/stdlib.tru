@@ -1,0 +1,203 @@
+// tru_lang/stdlib.tru
+// Standard library for TRU Language
+// Port of src/tru_lang/stdlib.rs -> Trn Lang syntax
+
+use std::io;
+use std::collections;
+
+// ─── math:: ───────────────────────────────────────────────────────────────────
+
+fn math_abs(n: float) -> float {
+    if n < 0.0 {
+        return 0.0 - n;
+    }
+    return n;
+}
+
+fn math_min(a: float, b: float) -> float {
+    if a < b { return a; }
+    return b;
+}
+
+fn math_max(a: float, b: float) -> float {
+    if a > b { return a; }
+    return b;
+}
+
+fn math_clamp(val: float, lo: float, hi: float) -> float {
+    return math_max(lo, math_min(val, hi));
+}
+
+fn math_pow(base: float, exp: int) -> float {
+    let mut result = 1.0;
+    let mut i = 0;
+    while i < exp {
+        result = result * base;
+        i += 1;
+    }
+    return result;
+}
+
+fn math_floor(n: float) -> int {
+    return math::to_int(n);
+}
+
+fn math_ceil(n: float) -> int {
+    let floor = math_floor(n);
+    if n > math::to_float(floor) {
+        return floor + 1;
+    }
+    return floor;
+}
+
+// ─── str:: ────────────────────────────────────────────────────────────────────
+
+fn str_repeat(s: str, n: int) -> str {
+    let mut result = "";
+    let mut i = 0;
+    while i < n {
+        result = result + str::clone(s);
+        i += 1;
+    }
+    return result;
+}
+
+fn str_pad_left(s: str, width: int, pad: str) -> str {
+    let mut result = s;
+    while str::len(result) < width {
+        result = str::clone(pad) + result;
+    }
+    return result;
+}
+
+fn str_pad_right(s: str, width: int, pad: str) -> str {
+    let mut result = s;
+    while str::len(result) < width {
+        result = result + str::clone(pad);
+    }
+    return result;
+}
+
+fn str_is_empty(s: str) -> bool {
+    return str::len(s) == 0;
+}
+
+fn str_first(s: str) -> str {
+    if str::len(s) == 0 { return ""; }
+    return str::char_at(s, 0);
+}
+
+fn str_last(s: str) -> str {
+    let n = str::len(s);
+    if n == 0 { return ""; }
+    return str::char_at(s, n - 1);
+}
+
+fn str_reverse(s: str) -> str {
+    let mut result = "";
+    let mut i = str::len(s) - 1;
+    while i >= 0 {
+        result = result + str::char_at(s, i);
+        i -= 1;
+    }
+    return result;
+}
+
+// ─── arr:: ────────────────────────────────────────────────────────────────────
+
+fn arr_first(arr: [str]) -> str {
+    if collections::len(arr) == 0 { return ""; }
+    return arr[0];
+}
+
+fn arr_last(arr: [str]) -> str {
+    let n = collections::len(arr);
+    if n == 0 { return ""; }
+    return arr[n - 1];
+}
+
+fn arr_reverse(arr: [str]) -> [str] {
+    let mut result = [];
+    let mut i = collections::len(arr) - 1;
+    while i >= 0 {
+        collections::push(result, arr[i]);
+        i -= 1;
+    }
+    return result;
+}
+
+fn arr_contains(arr: [str], val: str) -> bool {
+    let mut i = 0;
+    while i < collections::len(arr) {
+        if arr[i] == val { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+fn arr_join(arr: [str], sep: str) -> str {
+    let mut result = "";
+    let mut i = 0;
+    while i < collections::len(arr) {
+        if i > 0 { result = result + str::clone(sep); }
+        result = result + arr[i];
+        i += 1;
+    }
+    return result;
+}
+
+fn arr_filter_empty(arr: [str]) -> [str] {
+    let mut result = [];
+    let mut i = 0;
+    while i < collections::len(arr) {
+        if arr[i] != "" {
+            collections::push(result, arr[i]);
+        }
+        i += 1;
+    }
+    return result;
+}
+
+// ─── io:: ─────────────────────────────────────────────────────────────────────
+
+fn io_print_table(headers: [str], rows: [[str]]) {
+    io::println(arr_join(headers, " | "));
+    let mut divider = str_repeat("-", 40);
+    io::println(divider);
+    let mut i = 0;
+    while i < collections::len(rows) {
+        io::println(arr_join(rows[i], " | "));
+        i += 1;
+    }
+}
+
+fn io_prompt(msg: str) -> str {
+    io::print(msg);
+    return io::read_line();
+}
+
+// ─── sys:: ────────────────────────────────────────────────────────────────────
+
+fn sys_env_or(key: str, default: str) -> str {
+    let val = sys::env(key);
+    if val == "" { return default; }
+    return val;
+}
+
+// ─── Demo ─────────────────────────────────────────────────────────────────────
+
+fn main() {
+    io::println("=== stdlib demo ===");
+
+    io::println(math_abs(-5.0));
+    io::println(math_max(3.0, 7.0));
+    io::println(math_pow(2.0, 8));
+
+    io::println(str_repeat("ab", 3));
+    io::println(str_pad_left("42", 6, "0"));
+    io::println(str_reverse("hello"));
+
+    let words = ["apple", "banana", "cherry"];
+    io::println(arr_join(arr::clone(words), ", "));
+    io::println(arr_contains(words, "banana"));
+}

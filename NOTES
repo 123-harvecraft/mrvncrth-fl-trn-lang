@@ -1,0 +1,21 @@
+-- .run file extension
+-- .tru file extension
+-- trunk-lang, racy, rashc
+
+add lib: sgd_n_fsdp.txt
+add wasm
+add installer (dioksus) ---> trunk.bin, trunk.exe trunk
+add embed framework
+
+ai/ml (rust) embedded in wasm (slint)
+candle + burn
+open code + semi framework component
+
+plus:
+build time and struct
+framework ---> embeded, coin, ai/ml
+lib c++/rust
+complete lib python
+
+#tru: read custome lib, even its c++ redistributeable, tesseract, leptonica, gnu, musl, image
+

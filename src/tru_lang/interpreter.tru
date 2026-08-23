@@ -1,0 +1,314 @@
+// tru_lang/interpreter.tru
+// Tree-walk interpreter for TRU Language
+// Port of src/tru_lang/interpreter.rs -> Trn Lang syntax
+
+use std::io;
+use std::collections;
+
+// ─── Value Types ──────────────────────────────────────────────────────────────
+
+let VAL_INT   = "Int";
+let VAL_FLOAT = "Float";
+let VAL_STR   = "Str";
+let VAL_BOOL  = "Bool";
+let VAL_NIL   = "Nil";
+let VAL_FN    = "Fn";
+let VAL_ARR   = "Arr";
+let VAL_MAP   = "Map";
+let VAL_UNIT  = "Unit";
+
+// ─── Runtime Value ────────────────────────────────────────────────────────────
+
+struct Value {
+    pub kind:  str,
+    pub int_v: int,
+    pub flt_v: float,
+    pub str_v: str,
+    pub bool_v: bool,
+}
+
+fn val_int(n: int) -> Value {
+    return Value { kind: VAL_INT, int_v: n, flt_v: 0.0, str_v: "", bool_v: false };
+}
+
+fn val_float(f: float) -> Value {
+    return Value { kind: VAL_FLOAT, int_v: 0, flt_v: f, str_v: "", bool_v: false };
+}
+
+fn val_str(s: str) -> Value {
+    return Value { kind: VAL_STR, int_v: 0, flt_v: 0.0, str_v: s, bool_v: false };
+}
+
+fn val_bool(b: bool) -> Value {
+    return Value { kind: VAL_BOOL, int_v: 0, flt_v: 0.0, str_v: "", bool_v: b };
+}
+
+fn val_nil() -> Value {
+    return Value { kind: VAL_NIL, int_v: 0, flt_v: 0.0, str_v: "nil", bool_v: false };
+}
+
+fn val_unit() -> Value {
+    return Value { kind: VAL_UNIT, int_v: 0, flt_v: 0.0, str_v: "()", bool_v: false };
+}
+
+fn val_to_str(v: Value) -> str {
+    if v.kind == VAL_INT   { return "" + v.int_v; }
+    if v.kind == VAL_FLOAT { return "" + v.flt_v; }
+    if v.kind == VAL_STR   { return v.str_v; }
+    if v.kind == VAL_BOOL  { return "" + v.bool_v; }
+    if v.kind == VAL_NIL   { return "nil"; }
+    if v.kind == VAL_UNIT  { return "()"; }
+    return "?";
+}
+
+fn val_is_truthy(v: Value) -> bool {
+    if v.kind == VAL_BOOL { return v.bool_v; }
+    if v.kind == VAL_INT  { return v.int_v != 0; }
+    if v.kind == VAL_NIL  { return false; }
+    return true;
+}
+
+// ─── Environment (Scope Chain) ────────────────────────────────────────────────
+
+struct EnvEntry {
+    pub name:  str,
+    pub kind:  str,
+    pub int_v: int,
+    pub flt_v: float,
+    pub str_v: str,
+    pub bool_v: bool,
+}
+
+fn env_entry(name: str, val: Value) -> EnvEntry {
+    return EnvEntry {
+        name:   name,
+        kind:   val.kind,
+        int_v:  val.int_v,
+        flt_v:  val.flt_v,
+        str_v:  val.str_v,
+        bool_v: val.bool_v,
+    };
+}
+
+fn env_define(mut env: [EnvEntry], name: str, val: Value) -> [EnvEntry] {
+    let entry = env_entry(name, val);
+    collections::push(env, entry);
+    return env;
+}
+
+fn env_lookup(env: [EnvEntry], name: str) -> Value {
+    let mut i = collections::len(env) - 1;
+    while i >= 0 {
+        let e = env[i];
+        if e.name == name {
+            return Value {
+                kind:   e.kind,
+                int_v:  e.int_v,
+                flt_v:  e.flt_v,
+                str_v:  e.str_v,
+                bool_v: e.bool_v,
+            };
+        }
+        i -= 1;
+    }
+    return val_nil();
+}
+
+// ─── Interpreter ──────────────────────────────────────────────────────────────
+
+struct Interpreter {
+    pub output: [str],
+    pub call_depth: int,
+}
+
+fn interp_new() -> Interpreter {
+    return Interpreter { output: [], call_depth: 0 };
+}
+
+fn interp_eval_int_expr(expr: str, env: [EnvEntry]) -> int {
+    let trimmed = str::trim(expr);
+
+    if str::contains(trimmed, "+") {
+        let parts = str::split(trimmed, "+");
+        let left  = str::trim(parts[0]);
+        let right = str::trim(parts[1]);
+        return interp_eval_int_expr(left, arr::clone(env)) + interp_eval_int_expr(right, env);
+    }
+
+    if str::contains(trimmed, "-") {
+        let parts = str::split(trimmed, "-");
+        let left  = str::trim(parts[0]);
+        let right = str::trim(parts[1]);
+        return interp_eval_int_expr(left, arr::clone(env)) - interp_eval_int_expr(right, env);
+    }
+
+    if str::contains(trimmed, "*") {
+        let parts = str::split(trimmed, "*");
+        let left  = str::trim(parts[0]);
+        let right = str::trim(parts[1]);
+        return interp_eval_int_expr(left, arr::clone(env)) * interp_eval_int_expr(right, env);
+    }
+
+    if str::is_digit(str::char_at(trimmed, 0)) {
+        return str::parse_int(trimmed);
+    }
+
+    let looked_up = env_lookup(env, trimmed);
+    if looked_up.kind == VAL_INT {
+        return looked_up.int_v;
+    }
+
+    return 0;
+}
+
+fn interp_eval_bool_expr(expr: str, env: [EnvEntry]) -> bool {
+    let trimmed = str::trim(expr);
+
+    if str::contains(trimmed, "==") {
+        let parts = str::split(trimmed, "==");
+        let left  = str::trim(parts[0]);
+        let right = str::trim(parts[1]);
+        return interp_eval_int_expr(left, arr::clone(env)) == interp_eval_int_expr(right, env);
+    }
+
+    if str::contains(trimmed, "!=") {
+        let parts = str::split(trimmed, "!=");
+        let left  = str::trim(parts[0]);
+        let right = str::trim(parts[1]);
+        return interp_eval_int_expr(left, arr::clone(env)) != interp_eval_int_expr(right, env);
+    }
+
+    if str::contains(trimmed, "<") {
+        let parts = str::split(trimmed, "<");
+        let left  = str::trim(parts[0]);
+        let right = str::trim(parts[1]);
+        return interp_eval_int_expr(left, arr::clone(env)) < interp_eval_int_expr(right, env);
+    }
+
+    if str::contains(trimmed, ">") {
+        let parts = str::split(trimmed, ">");
+        let left  = str::trim(parts[0]);
+        let right = str::trim(parts[1]);
+        return interp_eval_int_expr(left, arr::clone(env)) > interp_eval_int_expr(right, env);
+    }
+
+    if trimmed == "true"  { return true; }
+    if trimmed == "false" { return false; }
+
+    return false;
+}
+
+fn interp_eval_expr(expr: str, env: [EnvEntry]) -> Value {
+    let trimmed = str::trim(str::replace(expr, ";", ""));
+
+    if trimmed == "nil"  { return val_nil(); }
+    if trimmed == "true"  { return val_bool(true); }
+    if trimmed == "false" { return val_bool(false); }
+
+    if str::starts_with(trimmed, "\"") {
+        let inner = str::slice(trimmed, 1, str::len(trimmed) - 1);
+        return val_str(inner);
+    }
+
+    if str::is_digit(str::char_at(trimmed, 0)) {
+        return val_int(interp_eval_int_expr(trimmed, env));
+    }
+
+    if str::contains(trimmed, "io::println") {
+        let arg = extract_call_arg(trimmed);
+        let v   = interp_eval_expr(arg, env);
+        io::println(val_to_str(v));
+        return val_unit();
+    }
+
+    if str::contains(trimmed, "io::print") {
+        let arg = extract_call_arg(trimmed);
+        let v   = interp_eval_expr(arg, env);
+        io::print(val_to_str(v));
+        return val_unit();
+    }
+
+    if str::contains(trimmed, "+") {
+        return val_int(interp_eval_int_expr(trimmed, env));
+    }
+
+    if str::contains(trimmed, "-") {
+        return val_int(interp_eval_int_expr(trimmed, env));
+    }
+
+    if str::contains(trimmed, "*") {
+        return val_int(interp_eval_int_expr(trimmed, env));
+    }
+
+    let looked = env_lookup(env, trimmed);
+    return looked;
+}
+
+fn extract_call_arg(call_expr: str) -> str {
+    let open  = str::index_of(call_expr, "(");
+    let close = str::last_index_of(call_expr, ")");
+    if open >= 0 && close > open {
+        return str::slice(call_expr, open + 1, close);
+    }
+    return "";
+}
+
+fn interp_run_stmts(stmts: [str], mut env: [EnvEntry]) -> Value {
+    let mut result = val_unit();
+    let mut i = 0;
+
+    while i < collections::len(stmts) {
+        let stmt = str::trim(stmts[i]);
+
+        if str::starts_with(stmt, "let ") || str::starts_with(stmt, "let mut ") {
+            let without  = str::replace(str::replace(stmt, "let mut ", ""), "let ", "");
+            let w_len    = str::len(without);
+            let eq_pos   = str::index_of(without, "=");
+            if eq_pos >= 0 {
+                let mut name = str::trim(str::slice(str::clone(without), 0, eq_pos));
+                let val_src  = str::trim(str::slice(without, eq_pos + 1, w_len));
+                let colon_p  = str::index_of(name, ":");
+                if colon_p >= 0 {
+                    name = str::trim(str::slice(str::clone(name), 0, colon_p));
+                }
+                let v = interp_eval_expr(val_src, arr::clone(env));
+                env   = env_define(env, name, v);
+                result = val_unit();
+            }
+        } else if str::starts_with(stmt, "return ") {
+            let val_src = str::trim(str::replace(stmt, "return ", ""));
+            result = interp_eval_expr(val_src, arr::clone(env));
+            return result;
+        } else if str::starts_with(stmt, "if ") {
+            let cond_src = str::trim(str::replace(stmt, "if ", ""));
+            let cond = interp_eval_bool_expr(cond_src, arr::clone(env));
+            if cond {
+                result = val_bool(true);
+            } else {
+                result = val_bool(false);
+            }
+        } else if stmt == "" || str::starts_with(stmt, "//") {
+            // skip
+        } else {
+            result = interp_eval_expr(stmt, arr::clone(env));
+        }
+
+        i += 1;
+    }
+
+    return result;
+}
+
+fn run_source(source: str) -> str {
+    let lines  = str::split(source, "\n");
+    let env    = [];
+    let result = interp_run_stmts(lines, env);
+    return val_to_str(result);
+}
+
+fn main() {
+    io::println("TRU Interpreter — running sample:");
+    let src = "let x = 10;\nlet y = 20;\nlet sum = x + y;\nio::println(sum);";
+    let result = run_source(src);
+    io::println("Result: " + result);
+}

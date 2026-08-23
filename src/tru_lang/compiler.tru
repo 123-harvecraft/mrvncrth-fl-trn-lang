@@ -1,0 +1,203 @@
+// tru_lang/compiler.tru
+// Rust transpiler for TRU Language
+// Port of src/tru_lang/compiler.rs -> Trn Lang syntax
+
+use std::io;
+use std::collections;
+
+// ─── Type Mapping ─────────────────────────────────────────────────────────────
+
+fn map_type(tru_type: str) -> str {
+    if tru_type == "int"     { return "i64"; }
+    if tru_type == "Int"     { return "i64"; }
+    if tru_type == "float"   { return "f64"; }
+    if tru_type == "Float"   { return "f64"; }
+    if tru_type == "str"     { return "String"; }
+    if tru_type == "Str"     { return "String"; }
+    if tru_type == "string"  { return "String"; }
+    if tru_type == "bool"    { return "bool"; }
+    if tru_type == "Bool"    { return "bool"; }
+    if tru_type == "void"    { return "()"; }
+    if tru_type == "nil"     { return "Option<()>"; }
+    return tru_type;
+}
+
+// ─── Stdlib Call Remapping ────────────────────────────────────────────────────
+
+fn remap_call(call_expr: str) -> str {
+    if str::starts_with(call_expr, "io::println(") {
+        let arg = extract_call_arg(call_expr, "io::println");
+        return "println!(\"{}\", " + arg + ")";
+    }
+    if str::starts_with(call_expr, "io::print(") {
+        let arg = extract_call_arg(call_expr, "io::print");
+        return "print!(\"{}\", " + arg + ")";
+    }
+    if str::starts_with(call_expr, "io::eprintln(") {
+        let arg = extract_call_arg(call_expr, "io::eprintln");
+        return "eprintln!(\"{}\", " + arg + ")";
+    }
+    if str::starts_with(call_expr, "io::read_line(") {
+        return "{ let mut __s = String::new(); std::io::stdin().read_line(&mut __s).unwrap(); __s.trim().to_string() }";
+    }
+    if str::starts_with(call_expr, "str::len(") {
+        let arg = extract_call_arg(call_expr, "str::len");
+        return arg + ".len()";
+    }
+    if str::starts_with(call_expr, "str::trim(") {
+        let arg = extract_call_arg(call_expr, "str::trim");
+        return arg + ".trim().to_string()";
+    }
+    if str::starts_with(call_expr, "str::to_upper(") {
+        let arg = extract_call_arg(call_expr, "str::to_upper");
+        return arg + ".to_uppercase()";
+    }
+    if str::starts_with(call_expr, "str::to_lower(") {
+        let arg = extract_call_arg(call_expr, "str::to_lower");
+        return arg + ".to_lowercase()";
+    }
+    if str::starts_with(call_expr, "str::contains(") {
+        let arg = extract_call_arg(call_expr, "str::contains");
+        return arg + ".contains(...)";
+    }
+    if str::starts_with(call_expr, "str::replace(") {
+        let arg = extract_call_arg(call_expr, "str::replace");
+        return arg + ".replace(...)";
+    }
+    if str::starts_with(call_expr, "str::split(") {
+        let arg = extract_call_arg(call_expr, "str::split");
+        return arg + ".split(...).collect::<Vec<_>>()";
+    }
+    if str::starts_with(call_expr, "collections::push(") {
+        let arg = extract_call_arg(call_expr, "collections::push");
+        return arg + ".push(...)";
+    }
+    if str::starts_with(call_expr, "collections::len(") {
+        let arg = extract_call_arg(call_expr, "collections::len");
+        return arg + ".len()";
+    }
+    if str::starts_with(call_expr, "sys::exit(") {
+        let arg = extract_call_arg(call_expr, "sys::exit");
+        return "std::process::exit(" + arg + ")";
+    }
+    if str::starts_with(call_expr, "sys::args(") {
+        return "std::env::args().collect::<Vec<String>>()";
+    }
+    return call_expr;
+}
+
+fn extract_call_arg(call_expr: str, prefix: str) -> str {
+    let prefix_len = str::len(prefix) + 1;
+    let inner = str::slice(call_expr, prefix_len, str::len(call_expr) - 1);
+    return inner;
+}
+
+// ─── Code Generator ───────────────────────────────────────────────────────────
+
+fn codegen_header() -> str {
+    return "#![allow(unused_variables, unused_mut, dead_code, unused_imports, unused_parens)]\nuse std::collections::HashMap;\nuse std::io::{self, BufRead, Write};\n\n";
+}
+
+fn codegen_stmt(line: str) -> str {
+    let trimmed = str::trim(line);
+
+    if trimmed == "" || str::starts_with(trimmed, "//") {
+        return trimmed + "\n";
+    }
+
+    if str::starts_with(trimmed, "use ") {
+        return "";
+    }
+
+    if str::starts_with(trimmed, "fn ") || str::starts_with(trimmed, "pub fn ") {
+        return codegen_fn_header(trimmed) + " {\n";
+    }
+
+    if str::starts_with(trimmed, "let mut ") {
+        return codegen_let(trimmed, true) + "\n";
+    }
+
+    if str::starts_with(trimmed, "let ") {
+        return codegen_let(trimmed, false) + "\n";
+    }
+
+    if str::starts_with(trimmed, "return ") {
+        let val = str::replace(trimmed, "return ", "");
+        let val2 = str::replace(val, ";", "");
+        return "    return " + val2 + ";\n";
+    }
+
+    if str::starts_with(trimmed, "if ") {
+        let cond = str::replace(trimmed, "if ", "");
+        let cond2 = str::replace(cond, "{", "");
+        return "    if " + str::trim(cond2) + " {\n";
+    }
+
+    if str::starts_with(trimmed, "while ") {
+        let cond = str::replace(trimmed, "while ", "");
+        let cond2 = str::replace(cond, "{", "");
+        return "    while " + str::trim(cond2) + " {\n";
+    }
+
+    if str::starts_with(trimmed, "for ") {
+        return "    " + trimmed + "\n";
+    }
+
+    if trimmed == "}" {
+        return "}\n";
+    }
+
+    if trimmed == "} else {" {
+        return "} else {\n";
+    }
+
+    let remapped = remap_call(trimmed);
+    let without_semi = str::replace(remapped, ";", "");
+    return "    " + without_semi + ";\n";
+}
+
+fn codegen_fn_header(line: str) -> str {
+    let without_pub = str::replace(line, "pub fn ", "fn ");
+    return without_pub;
+}
+
+fn codegen_let(line: str, is_mut: bool) -> str {
+    let without_let = str::replace(str::replace(line, "let mut ", ""), "let ", "");
+    let eq_pos = str::index_of(without_let, "=");
+    if eq_pos < 0 {
+        if is_mut {
+            return "    let mut " + without_let + ";";
+        }
+        return "    let " + without_let + ";";
+    }
+    let name    = str::trim(str::slice(without_let, 0, eq_pos));
+    let val     = str::trim(str::replace(str::slice(without_let, eq_pos + 1, str::len(without_let)), ";", ""));
+    let colon_p = str::index_of(name, ":");
+    let mut clean_name = name;
+    if colon_p >= 0 {
+        clean_name = str::trim(str::slice(clean_name, 0, colon_p));
+    }
+    let remapped_val = remap_call(val);
+    if is_mut {
+        return ("    let mut ").tru_add(clean_name).tru_add(" = ").tru_add(remapped_val).tru_add(";");
+    }
+    return ("    let ").tru_add(clean_name).tru_add(" = ").tru_add(remapped_val).tru_add(";");
+}
+
+fn compile_tru(source: str) -> str {
+    let mut out   = codegen_header();
+    let lines = str::split(source, "\n");
+    let mut i = 0;
+    while i < collections::len(lines) {
+        out = out + codegen_stmt(lines[i]);
+        i += 1;
+    }
+    return out;
+}
+
+fn main() {
+    let src = "fn main() {\n    let name = \"World\";\n    io::println(name);\n}";
+    let rust_code = compile_tru(src);
+    io::println("=== Generated Rust ===");
+    io::println(rust_code);
+}

@@ -1,0 +1,80 @@
+// hello.tru — first TRU Language program
+// Run:  tru_id run examples/hello.tru
+
+fn greet(name: str) -> str {
+    return "Hello, " + name + "!";
+}
+
+fn fibonacci(n: int) -> int {
+    if n <= 1 {
+        return n;
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+fn is_prime(n: int) -> bool {
+    if n < 2 { return false; }
+    let mut i = 2;
+    while i * i <= n {
+        if n % i == 0 { return false; }
+        i += 1;
+    }
+    return true;
+}
+
+fn main() {
+    // Basic output
+    println(greet("TRU Language"));
+    println("tru_id v0.1.0 — .tru extension");
+
+    // Variables and arithmetic
+    let x = 10;
+    let mut y = 20;
+    y += x;
+    println("x=" + to_str(x) + "  y=" + to_str(y));
+
+    // Fibonacci sequence
+    println("Fibonacci:");
+    let mut i = 0;
+    while i < 10 {
+        println("  fib(" + to_str(i) + ") = " + to_str(fibonacci(i)));
+        i += 1;
+    }
+
+    // Primes up to 30
+    println("Primes up to 30:");
+    let primes = [];
+    let mut n = 2;
+    while n <= 30 {
+        if is_prime(n) {
+            primes.push(n);
+        }
+        n += 1;
+    }
+    println("  " + primes.join(", "));
+
+    // Arrays
+    let nums = [5, 3, 8, 1, 9, 2, 7];
+    println("Before sort: " + nums.join(", "));
+    sort(nums);
+    println("After sort:  " + nums.join(", "));
+
+    // String methods
+    let msg = "  Hello, TRU World!  ";
+    println(msg.trim().to_upper());
+    println("contains 'TRU': " + to_str(msg.contains("TRU")));
+    println("split: " + msg.trim().split(", ").join(" | "));
+
+    // Match expression
+    let score = 85;
+    let grade = match score {
+        90 => "A",
+        80 => "B",
+        70 => "C",
+        60 => "D",
+        _  => "F"
+    };
+    println("Score " + to_str(score) + " -> Grade: " + grade);
+}
+
+main()

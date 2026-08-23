@@ -1,0 +1,15 @@
+[project]
+name = "tru_id_core"
+version = "0.1.0"
+author = "ISTA Dev"
+description = "TRU Language toolchain — compiler, interpreter, REPL"
+edition = "1.0"
+
+[bin]
+name = "tru_id"
+path = "src/main.tru"
+
+[dependencies]
+
+[build]
+target = "native"

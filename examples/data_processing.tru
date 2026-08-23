@@ -1,0 +1,544 @@
+// TRU Language Data Processing Example
+// High-performance data processing with TRU language optimizations
+
+use trunk_lang::tru_prelude::*;
+
+// TRU data processor with streaming capabilities
+tru_struct DataProcessor {
+    buffer_pool: MemoryPool<Vec<u8>>,
+    string_interner: StringInterner,
+    cache: FastCache<String, TruVector>,
+    batch_size: usize,
+}
+
+tru_impl DataProcessor {
+    tru_fn new(batch_size: usize) -> Self {
+        Self {
+            buffer_pool: MemoryPool::new(|| Vec::new()),
+            string_interner: StringInterner::new(),
+            cache: FastCache::new(10000),
+            batch_size,
+        }
+    }
+    
+    // Process text data with automatic caching
+    tru_fn process_text_batch(&self, texts: &[String]) -> Vec<TruVector> {
+        let mut embeddings = Vec::with_capacity(texts.len());
+        
+        for text in texts {
+            let interned_id = self.string_interner.intern(text);
+            
+            // Check cache first
+            let cache_key = format!("embed_{}", interned_id);
+            if let Some(cached_embedding) = self.cache.get(&cache_key) {
+                embeddings.push(cached_embedding.clone());
+                continue;
+            }
+            
+            // Generate embedding
+            let embedding = self.generate_embedding(text);
+            
+            // Cache the result
+            self.cache.put(cache_key, embedding.clone());
+            embeddings.push(embedding);
+        }
+        
+        embeddings
+    }
+    
+    // Generate embedding with memory pooling
+    tru_fn generate_embedding(&self, text: &str) -> TruVector {
+        let buffer = self.buffer_pool.get();
+        let buffer_len = buffer.len();
+        
+        // Use buffer for temporary storage
+        let mut embedding_data = Vec::with_capacity(512);
+        
+        let bytes = text.as_bytes();
+        for (i, &byte) in bytes.iter().enumerate() {
+            if i < 512 {
+                embedding_data.push(byte as f32 / 255.0);
+            } else {
+                embedding_data[i % 512] += byte as f32 / 255.0;
+            }
+        }
+        
+        // Return buffer to pool
+        self.buffer_pool.return_item(buffer);
+        
+        TruVector::new(embedding_data)
+    }
+    
+    // Process numerical data with SIMD optimization
+    tru_fn process_numerical_data(&self, data: &[f32], window_size: usize) -> Vec<TruVector> {
+        let mut windows = Vec::new();
+        
+        for i in 0..=data.len().saturating_sub(window_size) {
+            let window_data = &data[i..i + window_size];
+            let window_vec = TruVector::new(window_data.to_vec());
+            windows.push(window_vec);
+        }
+        
+        windows
+    }
+    
+    // Batch similarity computation
+    tru_fn compute_similarity_matrix(&self, embeddings: &[TruVector]) -> TruTensor {
+        let n = embeddings.len();
+        let mut similarity_matrix = TruTensor::zeros(vec![n, n]);
+        
+        // Compute upper triangle only, then mirror
+        for i in 0..n {
+            for j in i..n {
+                let similarity = if i == j {
+                    1.0
+                } else {
+                    embeddings[i].cosine_similarity(&embeddings[j])
+                };
+                
+                similarity_matrix.set(&[i, j], similarity).unwrap();
+                similarity_matrix.set(&[j, i], similarity).unwrap();
+            }
+        }
+        
+        similarity_matrix
+    }
+    
+    // Cluster data with hierarchical clustering
+    tru_fn hierarchical_cluster(&self, embeddings: &[TruVector], linkage: LinkageMethod) -> Vec<usize> {
+        let n = embeddings.len();
+        let mut clusters = (0..n).collect::<Vec<_>>();
+        let mut similarity_matrix = self.compute_similarity_matrix(embeddings);
+        
+        while clusters.len() > 1 {
+            // Find most similar clusters
+            let mut max_similarity = -1.0;
+            let mut merge_i = 0;
+            let mut merge_j = 0;
+            
+            for i in 0..clusters.len() {
+                for j in i + 1..clusters.len() {
+                    let similarity = similarity_matrix.get(&[clusters[i], clusters[j]]).unwrap_or(0.0);
+                    if similarity > max_similarity {
+                        max_similarity = similarity;
+                        merge_i = i;
+                        merge_j = j;
+                    }
+                }
+            }
+            
+            // Merge clusters
+            if merge_j < clusters.len() {
+                clusters.remove(merge_j);
+            }
+        }
+        
+        clusters
+    }
+}
+
+// TRU linkage methods for clustering
+tru_enum LinkageMethod {
+    Single,
+    Complete,
+    Average,
+    Ward,
+}
+
+// TRU streaming data processor
+tru_struct StreamingProcessor {
+    buffer: Vec<u8>,
+    chunk_size: usize,
+    processed_count: usize,
+}
+
+tru_impl StreamingProcessor {
+    tru_fn new(chunk_size: usize) -> Self {
+        Self {
+            buffer: Vec::with_capacity(chunk_size),
+            chunk_size,
+            processed_count: 0,
+        }
+    }
+    
+    // Process data in chunks
+    tru_fn process_chunk(&mut self, data: &[u8]) -> Vec<String> {
+        self.buffer.extend_from_slice(data);
+        
+        let mut chunks = Vec::new();
+        
+        while self.buffer.len() >= self.chunk_size {
+            let chunk = String::from_utf8_lossy(&self.buffer[..self.chunk_size]).to_string();
+            chunks.push(chunk);
+            
+            self.buffer.drain(0..self.chunk_size);
+            self.processed_count += 1;
+        }
+        
+        chunks
+    }
+    
+    // Get remaining data
+    tru_fn flush(&mut self) -> Option<String> {
+        if !self.buffer.is_empty() {
+            let remaining = String::from_utf8_lossy(&self.buffer).to_string();
+            self.buffer.clear();
+            Some(remaining)
+        } else {
+            None
+        }
+    }
+    
+    tru_fn processed_count(&self) -> usize {
+        self.processed_count
+    }
+}
+
+// TRU data transformer with various operations
+tru_struct DataTransformer {
+    operations: Vec<TransformOperation>,
+}
+
+tru_impl DataTransformer {
+    tru_fn new() -> Self {
+        Self {
+            operations: Vec::new(),
+        }
+    }
+    
+    tru_fn add_operation(mut self, operation: TransformOperation) -> Self {
+        self.operations.push(operation);
+        self
+    }
+    
+    // Apply all transformations
+    tru_fn transform(&self, data: &TruVector) -> TruVector {
+        let mut result = data.clone();
+        
+        for operation in &self.operations {
+            result = self.apply_operation(&result, operation);
+        }
+        
+        result
+    }
+    
+    tru_fn apply_operation(&self, data: &TruVector, operation: &TransformOperation) -> TruVector {
+        match operation {
+            TransformOperation::Normalize => {
+                let mut result = data.clone();
+                result.normalize();
+                result
+            }
+            TransformOperation::Standardize(mean, std) => {
+                let mut result = data.clone();
+                for i in 0..result.len() {
+                    let val = result.get(i).unwrap_or(0.0);
+                    let standardized = (val - mean[i]) / std[i];
+                    result.set(i, standardized).unwrap();
+                }
+                result
+            }
+            TransformOperation::Scale(factor) => {
+                let mut result = data.clone();
+                result.scale(*factor);
+                result
+            }
+            TransformOperation::PCA(components) => {
+                // Simplified PCA projection
+                let mut result = TruVector::zeros(components.min(data.len()));
+                for i in 0..result.len() {
+                    let val = data.get(i).unwrap_or(0.0);
+                    result.set(i, val).unwrap();
+                }
+                result
+            }
+            TransformOperation::FFT => {
+                // Simplified FFT (just copy for now)
+                data.clone()
+            }
+        }
+    }
+}
+
+// TRU transformation operations
+tru_enum TransformOperation {
+    Normalize,
+    Standardize(TruVector, TruVector),
+    Scale(f32),
+    PCA(usize),
+    FFT,
+}
+
+// TRU data aggregator with efficient grouping
+tru_struct DataAggregator {
+    group_key: String,
+    aggregation_method: AggregationMethod,
+}
+
+tru_impl DataAggregator {
+    tru_fn new(group_key: String, method: AggregationMethod) -> Self {
+        Self {
+            group_key,
+            aggregation_method: method,
+        }
+    }
+    
+    // Aggregate data by groups
+    tru_fn aggregate(&self, data: &[(String, f32)]) -> std::collections::HashMap<String, f32> {
+        let mut groups = std::collections::HashMap::new();
+        
+        for (key, value) in data {
+            let entry = groups.entry(key.clone()).or_insert(0.0);
+            
+            match self.aggregation_method {
+                AggregationMethod::Sum => *entry += value,
+                AggregationMethod::Count => *entry += 1.0,
+                AggregationMethod::Mean => {
+                    // For mean, we need to track sum and count separately
+                    // This is simplified - in practice, you'd store both
+                    *entry = (*entry + value) / 2.0;
+                }
+                AggregationMethod::Max => *entry = entry.max(value),
+                AggregationMethod::Min => *entry = entry.min(value),
+            }
+        }
+        
+        groups
+    }
+}
+
+// TRU aggregation methods
+tru_enum AggregationMethod {
+    Sum,
+    Count,
+    Mean,
+    Max,
+    Min,
+}
+
+// TRU data validator with configurable rules
+tru_struct DataValidator {
+    rules: Vec<ValidationRule>,
+}
+
+tru_impl DataValidator {
+    tru_fn new() -> Self {
+        Self {
+            rules: Vec::new(),
+        }
+    }
+    
+    tru_fn add_rule(mut self, rule: ValidationRule) -> Self {
+        self.rules.push(rule);
+        self
+    }
+    
+    // Validate data against all rules
+    tru_fn validate(&self, data: &TruVector) -> Vec<String> {
+        let mut errors = Vec::new();
+        
+        for rule in &self.rules {
+            if let Some(error) = self.check_rule(data, rule) {
+                errors.push(error);
+            }
+        }
+        
+        errors
+    }
+    
+    tru_fn check_rule(&self, data: &TruVector, rule: &ValidationRule) -> Option<String> {
+        match rule {
+            ValidationRule::NonNegative => {
+                for i in 0..data.len() {
+                    if data.get(i).unwrap_or(0.0) < 0.0 {
+                        return Some(format!("Negative value at index {}", i));
+                    }
+                }
+                None
+            }
+            ValidationRule::Range(min, max) => {
+                for i in 0..data.len() {
+                    let val = data.get(i).unwrap_or(0.0);
+                    if val < *min || val > *max {
+                        return Some(format!("Value {} at index {} not in range [{}, {}]", val, i, min, max));
+                    }
+                }
+                None
+            }
+            ValidationRule::Length(expected) => {
+                if data.len() != *expected {
+                    Some(format!("Expected length {}, got {}", expected, data.len()))
+                } else {
+                    None
+                }
+            }
+            ValidationRule::Custom(validation_fn) => {
+                validation_fn(data)
+            }
+        }
+    }
+}
+
+// TRU validation rules
+tru_enum ValidationRule {
+    NonNegative,
+    Range(f32, f32),
+    Length(usize),
+    Custom(fn(&TruVector) -> Option<String>),
+}
+
+// TRU data pipeline with chaining
+tru_struct DataPipeline {
+    processors: Vec<Box<dyn DataProcessorTrait>>,
+}
+
+tru_trait DataProcessorTrait {
+    tru_fn process(&self, data: &TruVector) -> TruVector;
+}
+
+// TRU concrete processor implementations
+tru_struct NormalizationProcessor;
+
+tru_impl DataProcessorTrait for NormalizationProcessor {
+    tru_fn process(&self, data: &TruVector) -> TruVector {
+        let mut result = data.clone();
+        result.normalize();
+        result
+    }
+}
+
+tru_struct ScalingProcessor {
+    factor: f32,
+}
+
+tru_impl DataProcessorTrait for ScalingProcessor {
+    tru_fn process(&self, data: &TruVector) -> TruVector {
+        let mut result = data.clone();
+        result.scale(self.factor);
+        result
+    }
+}
+
+tru_impl DataPipeline {
+    tru_fn new() -> Self {
+        Self {
+            processors: Vec::new(),
+        }
+    }
+    
+    tru_fn add_processor(mut self, processor: Box<dyn DataProcessorTrait>) -> Self {
+        self.processors.push(processor);
+        self
+    }
+    
+    // Process data through all processors
+    tru_fn process(&self, data: &TruVector) -> TruVector {
+        let mut result = data.clone();
+        
+        for processor in &self.processors {
+            result = processor.process(&result);
+        }
+        
+        result
+    }
+}
+
+// TRU main data processing example
+tru_fn main() {
+    println!("TRU Language Data Processing Example");
+    
+    // Create data processor
+    let processor = DataProcessor::new(32);
+    
+    // Generate sample text data
+    let texts: Vec<String> = (0..1000)
+        .map(|i| format!("Sample text number {} with some content", i))
+        .collect();
+    
+    println!("Processing {} text samples", texts.len());
+    
+    // Process text data in batches
+    let embeddings = processor.process_text_batch(&texts);
+    
+    println!("Generated {} embeddings", embeddings.len());
+    println!("Embedding dimension: {}", embeddings[0].len());
+    
+    // Compute similarity matrix
+    let similarity_matrix = processor.compute_similarity_matrix(&embeddings[..10]); // First 10 for demo
+    
+    println!("Computed similarity matrix for first 10 embeddings");
+    println!("Matrix shape: {:?}", similarity_matrix.shape());
+    
+    // Hierarchical clustering
+    let clusters = processor.hierarchical_cluster(&embeddings[..20], LinkageMethod::Average);
+    
+    println!("Hierarchical clustering completed");
+    println!("Number of clusters: {}", clusters.len());
+    
+    // Streaming data processing
+    let mut stream_processor = StreamingProcessor::new(64);
+    
+    let sample_data = b"This is sample streaming data for processing in chunks";
+    let chunks = stream_processor.process_chunk(sample_data);
+    
+    println!("Streaming processed {} chunks", chunks.len());
+    
+    if let Some(remaining) = stream_processor.flush() {
+        println!("Remaining data: {}", remaining);
+    }
+    
+    // Data transformation pipeline
+    let transformer = DataTransformer::new()
+        .add_operation(TransformOperation::Normalize)
+        .add_operation(TransformOperation::Scale(2.0));
+    
+    let sample_vector = TruVector::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+    let transformed = transformer.transform(&sample_vector);
+    
+    println!("Transformed vector: {:?}", transformed.as_slice());
+    
+    // Data aggregation
+    let aggregator = DataAggregator::new("category".to_string(), AggregationMethod::Mean);
+    
+    let sample_data = vec![
+        ("A".to_string(), 1.0),
+        ("B".to_string(), 2.0),
+        ("A".to_string(), 3.0),
+        ("C".to_string(), 4.0),
+        ("B".to_string(), 5.0),
+    ];
+    
+    let aggregated = aggregator.aggregate(&sample_data);
+    
+    println!("Aggregated data: {:?}", aggregated);
+    
+    // Data validation
+    let validator = DataValidator::new()
+        .add_rule(ValidationRule::NonNegative)
+        .add_rule(ValidationRule::Length(5));
+    
+    let test_vector = TruVector::new(vec![1.0, -2.0, 3.0, 4.0, 5.0, 6.0]);
+    let validation_errors = validator.validate(&test_vector);
+    
+    println!("Validation errors: {:?}", validation_errors);
+    
+    // Data pipeline
+    let pipeline = DataPipeline::new()
+        .add_processor(Box::new(NormalizationProcessor))
+        .add_processor(Box::new(ScalingProcessor { factor: 1.5 }));
+    
+    let pipeline_result = pipeline.process(&sample_vector);
+    println!("Pipeline result: {:?}", pipeline_result.as_slice());
+    
+    // Performance metrics
+    let runtime = get_tru_runtime();
+    
+    if let Some(metrics) = runtime.get_metric("process_text_batch") {
+        println!("\nPerformance Metrics:");
+        println!("  Text batches processed: {}", metrics.call_count);
+        println!("  Average time: {} ns", metrics.avg_time_ns);
+        println!("  Operations per second: {:.0}", metrics.ops_per_sec);
+    }
+    
+    println!("\nTRU Data Processing Example Completed!");
+}

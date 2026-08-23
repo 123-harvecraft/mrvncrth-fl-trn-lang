@@ -1,0 +1,414 @@
+// tru_lang_tour.tru — Complete TRU Language feature tour
+// Crate: tru_id_core  |  Extension: .tru
+// Run:   tru_id run examples/tru_lang_tour.tru
+
+// ─── 1. Variables and types ──────────────────────────────────────────────────
+
+fn section_variables() {
+    println("=== 1. Variables ===");
+
+    let immutable = 42;
+    let mut counter = 0;
+    let pi_approx = 3.14159;
+    let greeting  = "TRU Language";
+    let active    = true;
+    let nothing   = nil;
+
+    counter += 10;
+    println("int    : " + to_str(immutable));
+    println("mut    : " + to_str(counter));
+    println("float  : " + to_str(pi_approx));
+    println("str    : " + greeting);
+    println("bool   : " + to_str(active));
+    println("nil    : " + to_str(nothing));
+}
+
+// ─── 2. Functions ────────────────────────────────────────────────────────────
+
+fn add(a: int, b: int) -> int { return a + b; }
+fn multiply(a: int, b: int) -> int { return a * b; }
+
+fn power(base: int, exp: int) -> int {
+    if exp == 0 { return 1; }
+    let mut result = 1;
+    let mut i = 0;
+    while i < exp {
+        result = multiply(result, base);
+        i += 1;
+    }
+    return result;
+}
+
+fn factorial(n: int) -> int {
+    if n <= 1 { return 1; }
+    return n * factorial(n - 1);
+}
+
+fn section_functions() {
+    println("\n=== 2. Functions ===");
+    println("add(3,4)       = " + to_str(add(3, 4)));
+    println("power(2,10)    = " + to_str(power(2, 10)));
+    println("factorial(10)  = " + to_str(factorial(10)));
+}
+
+// ─── 3. Control flow ─────────────────────────────────────────────────────────
+
+fn fizzbuzz(n: int) -> str {
+    if n % 15 == 0 { return "FizzBuzz"; }
+    if n % 3  == 0 { return "Fizz"; }
+    if n % 5  == 0 { return "Buzz"; }
+    return to_str(n);
+}
+
+fn section_control_flow() {
+    println("\n=== 3. Control Flow ===");
+
+    // if / else
+    let x = 7;
+    if x > 5 {
+        println("x is greater than 5");
+    } else {
+        println("x is 5 or less");
+    }
+
+    // while
+    let mut sum = 0;
+    let mut i = 1;
+    while i <= 100 {
+        sum += i;
+        i += 1;
+    }
+    println("sum 1..100 = " + to_str(sum));
+
+    // for + range
+    let mut fb_out = [];
+    let mut j = 1;
+    while j <= 20 {
+        fb_out.push(fizzbuzz(j));
+        j += 1;
+    }
+    println("FizzBuzz:  " + fb_out.join(" "));
+
+    // break / continue
+    let mut evens = [];
+    let mut k = 0;
+    while k < 20 {
+        k += 1;
+        if k % 2 != 0 { continue; }
+        if k > 12 { break; }
+        evens.push(k);
+    }
+    println("Evens <= 12: " + evens.join(", "));
+}
+
+// ─── 4. Arrays & strings ─────────────────────────────────────────────────────
+
+fn section_arrays_strings() {
+    println("\n=== 4. Arrays & Strings ===");
+
+    // Array operations
+    let nums = [9, 2, 7, 4, 1, 8, 3, 6, 5];
+    println("original : " + nums.join(", "));
+    sort(nums);
+    println("sorted   : " + nums.join(", "));
+    reverse(nums);
+    println("reversed : " + nums.join(", "));
+    println("len      : " + to_str(len(nums)));
+    println("contains 7: " + to_str(nums.contains(7)));
+
+    nums.push(10);
+    println("after push: " + nums.join(", "));
+    let popped = nums.pop();
+    println("popped    : " + to_str(popped));
+
+    // String operations
+    let s = "  Hello, TRU World!  ";
+    println("original  : '" + s + "'");
+    println("trim      : '" + s.trim() + "'");
+    println("to_upper  : '" + s.trim().to_upper() + "'");
+    println("to_lower  : '" + s.trim().to_lower() + "'");
+    println("replace   : '" + s.trim().replace("World", "tru_id") + "'");
+    println("split[1]  : '" + s.trim().split(", ").get(1) + "'");
+    println("starts_with Hello: " + to_str(s.trim().starts_with("Hello")));
+
+    // String + array of chars
+    let word = "tru_id";
+    let chars = word.chars();
+    println("chars of '" + word + "': " + chars.join("-"));
+}
+
+// ─── 5. Enums and pattern matching ───────────────────────────────────────────
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+    Rgb(int, int, int),
+}
+
+fn color_name(c: Color) -> str {
+    match c {
+        Color::Red           => "red",
+        Color::Green         => "green",
+        Color::Blue          => "blue",
+        Color::Rgb(r, g, b)  => "rgb(" + to_str(r) + "," + to_str(g) + "," + to_str(b) + ")",
+    }
+}
+
+fn section_enums_match() {
+    println("\n=== 5. Enums & Pattern Matching ===");
+
+    let colors = [
+        Color::Red,
+        Color::Green,
+        Color::Blue,
+        Color::Rgb(255, 128, 0),
+    ];
+
+    let mut i = 0;
+    while i < len(colors) {
+        println("  " + color_name(colors[i]));
+        i += 1;
+    }
+
+    // Nested match with tuples
+    let pairs = [(1, 2), (0, 5), (3, 3), (-1, 4)];
+    let mut j = 0;
+    while j < len(pairs) {
+        let pair = pairs[j];
+        let a = pair.0;
+        let b = pair.1;
+        let result = match a {
+            0 => "a is zero",
+            _ => if a < 0 { "a is negative" } else { if a == b { "a equals b" } else { "a is positive" } }
+        };
+        println("  (" + to_str(a) + "," + to_str(b) + ") -> " + result);
+        j += 1;
+    }
+}
+
+// ─── 6. Structs ───────────────────────────────────────────────────────────────
+
+struct Vector3 {
+    x: float,
+    y: float,
+    z: float,
+}
+
+fn vec3(x: float, y: float, z: float) -> Vector3 {
+    return Vector3 { x: x, y: y, z: z };
+}
+
+fn vec3_add(a: Vector3, b: Vector3) -> Vector3 {
+    return Vector3 { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+}
+
+fn vec3_dot(a: Vector3, b: Vector3) -> float {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+fn vec3_len(v: Vector3) -> float {
+    return sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+fn vec3_str(v: Vector3) -> str {
+    return "(" + to_str(v.x) + ", " + to_str(v.y) + ", " + to_str(v.z) + ")";
+}
+
+fn section_structs() {
+    println("\n=== 6. Structs ===");
+
+    let v1 = vec3(1.0, 2.0, 3.0);
+    let v2 = vec3(4.0, 5.0, 6.0);
+    let v3 = vec3_add(v1, v2);
+
+    println("v1     = " + vec3_str(v1));
+    println("v2     = " + vec3_str(v2));
+    println("v1+v2  = " + vec3_str(v3));
+    println("dot    = " + to_str(vec3_dot(v1, v2)));
+    println("|v1|   = " + to_str(vec3_len(v1)));
+}
+
+// ─── 7. Higher-order / closures ───────────────────────────────────────────────
+
+fn apply_twice(f: fn, x: int) -> int {
+    return f(f(x));
+}
+
+fn double(x: int) -> int { return x * 2; }
+fn inc(x: int)    -> int { return x + 1; }
+
+fn section_higher_order() {
+    println("\n=== 7. Higher-Order Functions ===");
+
+    println("double(5)        = " + to_str(double(5)));
+    println("apply_twice(double, 3) = " + to_str(apply_twice(double, 3)));
+    println("apply_twice(inc,   0)  = " + to_str(apply_twice(inc, 0)));
+
+    // Manual map using a while loop (language-level map support)
+    let data = [1, 2, 3, 4, 5];
+    let doubled = [];
+    let mut i = 0;
+    while i < len(data) {
+        doubled.push(data[i] * 2);
+        i += 1;
+    }
+    println("doubled: " + doubled.join(", "));
+
+    // Manual filter
+    let filtered = [];
+    let mut j = 0;
+    while j < len(data) {
+        if data[j] % 2 == 0 { filtered.push(data[j]); }
+        j += 1;
+    }
+    println("evens:   " + filtered.join(", "));
+
+    // Manual reduce (sum)
+    let mut total = 0;
+    let mut k = 0;
+    while k < len(data) {
+        total += data[k];
+        k += 1;
+    }
+    println("sum:     " + to_str(total));
+}
+
+// ─── 8. Recursion & algorithms ───────────────────────────────────────────────
+
+fn quicksort(arr: [int], lo: int, hi: int) {
+    if lo >= hi { return; }
+    let pivot = arr[hi];
+    let mut i = lo;
+    let mut j = lo;
+    while j < hi {
+        if arr[j] <= pivot {
+            let tmp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = tmp;
+            i += 1;
+        }
+        j += 1;
+    }
+    let tmp2 = arr[i];
+    arr[i] = arr[hi];
+    arr[hi] = tmp2;
+    quicksort(arr, lo, i - 1);
+    quicksort(arr, i + 1, hi);
+}
+
+fn binary_search(arr: [int], target: int) -> int {
+    let mut lo = 0;
+    let mut hi = len(arr) - 1;
+    while lo <= hi {
+        let mid = (lo + hi) / 2;
+        if arr[mid] == target  { return mid; }
+        if arr[mid] < target   { lo = mid + 1; }
+        else                   { hi = mid - 1; }
+    }
+    return -1;
+}
+
+fn section_algorithms() {
+    println("\n=== 8. Algorithms ===");
+
+    let arr = [64, 34, 25, 12, 22, 11, 90, 3, 78, 45];
+    println("before quicksort: " + arr.join(", "));
+    quicksort(arr, 0, len(arr) - 1);
+    println("after  quicksort: " + arr.join(", "));
+
+    let targets = [12, 45, 99, 3];
+    let mut t = 0;
+    while t < len(targets) {
+        let idx = binary_search(arr, targets[t]);
+        if idx >= 0 {
+            println("  found " + to_str(targets[t]) + " at index " + to_str(idx));
+        } else {
+            println("  " + to_str(targets[t]) + " not found");
+        }
+        t += 1;
+    }
+}
+
+// ─── 9. Math stdlib ───────────────────────────────────────────────────────────
+
+fn section_math() {
+    println("\n=== 9. Math stdlib ===");
+    println("PI       = " + to_str(PI));
+    println("E        = " + to_str(E));
+    println("sqrt(2)  = " + to_str(sqrt(2.0)));
+    println("sin(PI/2)= " + to_str(sin(PI / 2.0)));
+    println("cos(0)   = " + to_str(cos(0.0)));
+    println("pow(2,8) = " + to_str(pow(2.0, 8.0)));
+    println("ln(E)    = " + to_str(ln(E)));
+    println("abs(-7)  = " + to_str(abs(-7)));
+    println("max(3,9) = " + to_str(max(3, 9)));
+    println("min(3,9) = " + to_str(min(3, 9)));
+    println("clamp(15,0,10) = " + to_str(clamp(15, 0, 10)));
+}
+
+// ─── 10. Maps ────────────────────────────────────────────────────────────────
+
+fn word_count(sentence: str) -> [str] {
+    let words = sentence.to_lower().split(" ");
+    let counts = new_map();
+    let mut i = 0;
+    while i < len(words) {
+        let word = words[i];
+        if word.len() == 0 {
+            i += 1;
+            continue;
+        }
+        if counts.contains_key(word) {
+            let cur = to_int(counts.get(word));
+            counts.insert(word, to_str(cur + 1));
+        } else {
+            counts.insert(word, "1");
+        }
+        i += 1;
+    }
+    let result = [];
+    let keys = map_keys(counts);
+    let mut j = 0;
+    while j < len(keys) {
+        let k = keys[j];
+        result.push(k + "=" + counts.get(k));
+        j += 1;
+    }
+    return result;
+}
+
+fn section_maps() {
+    println("\n=== 10. Maps ===");
+    let sentence = "the quick brown fox jumps over the lazy fox";
+    let wc = word_count(sentence);
+    println("Word counts in: '" + sentence + "'");
+    sort(wc);
+    let mut i = 0;
+    while i < len(wc) {
+        println("  " + wc[i]);
+        i += 1;
+    }
+}
+
+// ─── Entry point ─────────────────────────────────────────────────────────────
+
+fn main() {
+    println("tru_id_core v0.1.0 — TRU Language Tour");
+    println("crate: tru_id_core  |  ext: .tru\n");
+
+    section_variables();
+    section_functions();
+    section_control_flow();
+    section_arrays_strings();
+    section_enums_match();
+    section_structs();
+    section_higher_order();
+    section_algorithms();
+    section_math();
+    section_maps();
+
+    println("\nTour complete!");
+}
+
+main()

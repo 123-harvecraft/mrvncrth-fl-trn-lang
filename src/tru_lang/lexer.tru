@@ -1,0 +1,241 @@
+// tru_lang/lexer.tru
+// Tokenizer for the TRU Language
+// Port of src/tru_lang/lexer.rs -> Trn Lang syntax
+
+use std::io;
+use std::collections;
+
+// ─── Token Kinds ───────────────────────────────────────────────────────────────
+
+// Token kind constants (string tags instead of enum for portability)
+let KIND_INT      = "Int";
+let KIND_FLOAT    = "Float";
+let KIND_STR      = "Str";
+let KIND_BOOL     = "Bool";
+let KIND_NIL      = "Nil";
+let KIND_IDENT    = "Ident";
+let KIND_FN       = "Fn";
+let KIND_LET      = "Let";
+let KIND_MUT      = "Mut";
+let KIND_RETURN   = "Return";
+let KIND_IF       = "If";
+let KIND_ELSE     = "Else";
+let KIND_WHILE    = "While";
+let KIND_FOR      = "For";
+let KIND_IN       = "In";
+let KIND_BREAK    = "Break";
+let KIND_CONTINUE = "Continue";
+let KIND_STRUCT   = "Struct";
+let KIND_IMPL     = "Impl";
+let KIND_ENUM     = "Enum";
+let KIND_MATCH    = "Match";
+let KIND_USE      = "Use";
+let KIND_PUB      = "Pub";
+let KIND_SELF     = "Self";
+let KIND_EOF      = "Eof";
+
+// ─── Token Struct ──────────────────────────────────────────────────────────────
+
+struct Token {
+    pub kind:  str,
+    pub value: str,
+    pub line:  int,
+}
+
+fn token_new(kind: str, value: str, line: int) -> Token {
+    return Token { kind: kind, value: value, line: line };
+}
+
+fn token_is_keyword(t: Token) -> bool {
+    if t.kind == KIND_FN       { return true; }
+    if t.kind == KIND_LET      { return true; }
+    if t.kind == KIND_MUT      { return true; }
+    if t.kind == KIND_RETURN   { return true; }
+    if t.kind == KIND_IF       { return true; }
+    if t.kind == KIND_ELSE     { return true; }
+    if t.kind == KIND_WHILE    { return true; }
+    if t.kind == KIND_FOR      { return true; }
+    if t.kind == KIND_IN       { return true; }
+    if t.kind == KIND_STRUCT   { return true; }
+    if t.kind == KIND_IMPL     { return true; }
+    if t.kind == KIND_ENUM     { return true; }
+    if t.kind == KIND_MATCH    { return true; }
+    if t.kind == KIND_USE      { return true; }
+    if t.kind == KIND_PUB      { return true; }
+    return false;
+}
+
+// ─── Lexer ─────────────────────────────────────────────────────────────────────
+
+struct LexerState {
+    pub source: str,
+    pub pos:    int,
+    pub line:   int,
+}
+
+fn lexer_new(source: str) -> LexerState {
+    return LexerState { source: source, pos: 0, line: 1 };
+}
+
+fn lexer_at_end(state: LexerState) -> bool {
+    return state.pos >= str::len(state.source);
+}
+
+fn lexer_current(state: LexerState) -> str {
+    return str::char_at(state.source, state.pos);
+}
+
+fn lexer_peek(state: LexerState) -> str {
+    return str::char_at(state.source, state.pos + 1);
+}
+
+fn lexer_new_at(source: str, pos: int, line: int) -> LexerState {
+    return LexerState { source: source, pos: pos, line: line };
+}
+
+fn lexer_advance(mut state: LexerState) -> LexerState {
+    if lexer_current(arr::clone(state)) == "\n" {
+        state.line += 1;
+    }
+    state.pos += 1;
+    return state;
+}
+
+fn lexer_skip_whitespace(mut state: LexerState) -> LexerState {
+    while !lexer_at_end(arr::clone(state)) {
+        let ch = lexer_current(arr::clone(state));
+        if ch == " " || ch == "\t" || ch == "\r" || ch == "\n" {
+            state = lexer_advance(state);
+        } else if ch == "/" && lexer_peek(arr::clone(state)) == "/" {
+            while !lexer_at_end(arr::clone(state)) && lexer_current(arr::clone(state)) != "\n" {
+                state = lexer_advance(state);
+            }
+        } else {
+            break;
+        }
+    }
+    return state;
+}
+
+fn lex_string(mut state: LexerState) -> [str] {
+    state = lexer_advance(state);
+    let mut val = "";
+    while !lexer_at_end(arr::clone(state)) && lexer_current(arr::clone(state)) != "\"" {
+        val = val + lexer_current(arr::clone(state));
+        state = lexer_advance(state);
+    }
+    state = lexer_advance(state);
+    return [KIND_STR, val, "" + state.pos, "" + state.line];
+}
+
+fn lex_number(mut state: LexerState) -> [str] {
+    let mut num   = "";
+    let mut float = "false";
+    while !lexer_at_end(arr::clone(state)) && str::is_digit(lexer_current(arr::clone(state))) {
+        num   = num + lexer_current(arr::clone(state));
+        state = lexer_advance(state);
+    }
+    if !lexer_at_end(arr::clone(state)) && lexer_current(arr::clone(state)) == "." && str::is_digit(lexer_peek(arr::clone(state))) {
+        float = "true";
+        num   = num + ".";
+        state = lexer_advance(state);
+        while !lexer_at_end(arr::clone(state)) && str::is_digit(lexer_current(arr::clone(state))) {
+            num   = num + lexer_current(arr::clone(state));
+            state = lexer_advance(state);
+        }
+    }
+    let mut kind = KIND_INT;
+    if float == "true" {
+        kind = KIND_FLOAT;
+    }
+    return [kind, num, "" + state.pos, "" + state.line];
+}
+
+fn lex_ident(mut state: LexerState) -> [str] {
+    let mut word = "";
+    while !lexer_at_end(arr::clone(state)) && str::is_alnum(lexer_current(arr::clone(state))) {
+        word  = word + lexer_current(arr::clone(state));
+        state = lexer_advance(state);
+    }
+    let kind = keyword_kind(str::clone(word));
+    return [kind, word, "" + state.pos, "" + state.line];
+}
+
+fn keyword_kind(word: str) -> str {
+    if word == "fn"       { return KIND_FN; }
+    if word == "let"      { return KIND_LET; }
+    if word == "mut"      { return KIND_MUT; }
+    if word == "return"   { return KIND_RETURN; }
+    if word == "if"       { return KIND_IF; }
+    if word == "else"     { return KIND_ELSE; }
+    if word == "while"    { return KIND_WHILE; }
+    if word == "for"      { return KIND_FOR; }
+    if word == "in"       { return KIND_IN; }
+    if word == "break"    { return KIND_BREAK; }
+    if word == "continue" { return KIND_CONTINUE; }
+    if word == "struct"   { return KIND_STRUCT; }
+    if word == "impl"     { return KIND_IMPL; }
+    if word == "enum"     { return KIND_ENUM; }
+    if word == "match"    { return KIND_MATCH; }
+    if word == "use"      { return KIND_USE; }
+    if word == "pub"      { return KIND_PUB; }
+    if word == "self"     { return KIND_SELF; }
+    if word == "true"     { return KIND_BOOL; }
+    if word == "false"    { return KIND_BOOL; }
+    if word == "nil"      { return KIND_NIL; }
+    return KIND_IDENT;
+}
+
+fn tokenize(source: str) -> [Token] {
+    let mut state  = lexer_new(source);
+    let mut tokens = [];
+
+    while !lexer_at_end(arr::clone(state)) {
+        state = lexer_skip_whitespace(state);
+        if lexer_at_end(arr::clone(state)) {
+            break;
+        }
+
+        let line = state.line;
+        let ch   = lexer_current(arr::clone(state));
+
+        if ch == "\"" {
+            let saved = str::clone(state.source);
+            let parts = lex_string(state);
+            let tok = Token { kind: parts[0], value: parts[1], line: line };
+            collections::push(tokens, tok);
+            state = lexer_new_at(saved, str::parse_int(parts[2]), str::parse_int(parts[3]));
+        } else if str::is_digit(ch) {
+            let saved = str::clone(state.source);
+            let parts = lex_number(state);
+            let tok = Token { kind: parts[0], value: parts[1], line: line };
+            collections::push(tokens, tok);
+            state = lexer_new_at(saved, str::parse_int(parts[2]), str::parse_int(parts[3]));
+        } else if str::is_alpha(ch) {
+            let saved = str::clone(state.source);
+            let parts = lex_ident(state);
+            let tok = Token { kind: parts[0], value: parts[1], line: line };
+            collections::push(tokens, tok);
+            state = lexer_new_at(saved, str::parse_int(parts[2]), str::parse_int(parts[3]));
+        } else {
+            let tok = Token { kind: str::clone(ch), value: ch, line: line };
+            collections::push(tokens, tok);
+            state = lexer_advance(state);
+        }
+    }
+
+    let eof = Token { kind: KIND_EOF, value: "", line: state.line };
+    collections::push(tokens, eof);
+    return tokens;
+}
+
+fn main() {
+    let src = "fn main() { let x = 42; io::println(x); }";
+    let tokens = tokenize(src);
+    let mut i = 0;
+    while i < collections::len(tokens) {
+        let tok = tokens[i];
+        io::println("[" + tok.kind + "] " + tok.value);
+        i += 1;
+    }
+}

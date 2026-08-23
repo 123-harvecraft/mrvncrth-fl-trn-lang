@@ -1,0 +1,317 @@
+# tru_id_core — TRU Language Configuration
+# Language: TRU (.tru / .run)  |  Crate: tru_id_*
+
+[project]
+name = "tru_id_core"
+version = "0.1.0"
+description = "tru_id_core — TRU Language (.tru) with lexer, parser, interpreter, compiler and high-performance runtime"
+authors = ["istamar.nugraha@gmail.co.id"]
+license = "MIT"
+repository = "https://github.com/tru-id/tru_id_core"
+homepage = "https://tru-id.lang"
+keywords = ["tru", "language", "compiler", "interpreter", "tru_id"]
+categories = ["compilers", "development-tools", "science"]
+edition = "2021"
+rust-version = "1.75"
+
+[configure]
+build_target = "release"
+optimization_level = 3
+lto = true
+codegen_units = 1
+panic = "abort"
+overflow_checks = false
+
+[bin]
+name = "tru_id"
+path = "src/bin/main.rs"
+target = "x86_64-unknown-linux-gnu"
+wasm_target = "wasm32-unknown-unknown"
+
+[[bin]]
+name = "trunk-cli"
+path = "src/bin/cli.rs"
+
+[[bin]]
+name = "tru-compiler"
+path = "src/bin/tru_compiler.rs"
+
+[src]
+main = "src/lib.rs"
+root = "src"
+include = ["**/*.rs", "**/*.tru", "**/*.run"]
+exclude = ["tests/", "examples/", "benches/"]
+
+[dependencies]
+# Core dependencies
+tokio = { version = "1.45.0", features = ["macros", "rt-multi-thread", "full"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.128"
+uuid = { version = "1.11.0", features = ["v4", "serde"] }
+chrono = { version = "0.4.38", features = ["serde"] }
+
+# Web framework dependencies
+warp = "0.3.7"
+axum = "0.7.7"
+tower-http = { version = "0.5.0", features = ["cors"] }
+
+# Database dependencies
+surrealdb = "2.6.3"
+diesel = { version = "1.4.8", features = ["postgres", "sqlite", "r2d2"] }
+rusqlite = "0.32.1"
+sqlx = { version = "0.8.2", features = ["runtime-tokio-rustls", "postgres", "sqlite", "mysql"] }
+redis = "0.24.0"
+
+# Security dependencies
+aes = "0.8.4"
+aes-gcm = "0.10.3"
+base64 = "0.22.1"
+jsonwebtoken = "9.3.1"
+sha2 = "0.10.8"
+
+# AI/ML dependencies
+burn = { version = "0.16", features = ["std", "wgpu", "autodiff", "ndarray"], default-features = false }
+burn-tensor = "0.16.0"
+cubecl = "0.4.0"
+ndarray = "0.15.6"
+ndarray-rand = "0.14.0"
+
+# Additional utilities
+dotenv = "0.15"
+once_cell = "1.21.4"
+rand = "0.8.5"
+log = "0.4.29"
+anyhow = "1.0.95"
+thiserror = "1.0.69"
+lazy_static = "1.5.0"
+
+[dev-dependencies]
+tokio-test = "0.4"
+criterion = { version = "0.5.1", features = ["html_reports"] }
+proptest = "1.5.0"
+
+[target.x86_64-unknown-linux-gnu.dependencies]
+# Linux-specific dependencies
+libc = "0.2.169"
+
+[target.x86_64-pc-windows-msvc.dependencies]
+# Windows-specific dependencies
+winapi = { version = "0.3.9", features = ["winuser", "wincon"] }
+
+[target.wasm32-unknown-unknown.dependencies]
+# WASM-specific dependencies
+wasm-bindgen = "0.2.95"
+web-sys = "0.3.72"
+js-sys = "0.3.72"
+console_error_panic_hook = "0.1.7"
+
+[features]
+default = ["std", "performance"]
+std = []
+performance = ["simd", "memory-pools"]
+simd = []
+memory-pools = []
+wasm = ["burn/wasm", "wasm-bindgen"]
+cuda = [] # Disabled for compatibility
+opencl = []
+sgd-fsdp = ["burn", "cubecl"]
+embedded = ["wasm", "slint"]
+coin = []
+ai-ml = ["burn", "cubecl", "ndarray"]
+python-bindings = ["pyo3"]
+
+[build]
+rustflags = [
+    "-C", "target-cpu=native",
+    "-C", "target-feature=+avx2,+fma",
+    "-C", "link-arg=-fuse-ld=lld",
+    "-C", "link-arg=-Wl,--gc-sections",
+    "-C", "link-arg=-Wl,--strip-all"
+]
+
+[target.wasm32-unknown-unknown.build]
+rustflags = [
+    "-C", "target-feature=+bulk-memory",
+    "-C", "link-arg=--import-memory",
+    "-C", "link-arg=--max-memory=2147483648"
+]
+
+[profile.dev]
+opt-level = 1
+debug = true
+overflow-checks = true
+lto = false
+codegen-units = 256
+incremental = true
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = true
+codegen-units = 1
+panic = "abort"
+overflow-checks = false
+strip = true
+
+[profile.bench]
+opt-level = 3
+debug = false
+lto = true
+codegen-units = 1
+panic = "abort"
+overflow-checks = false
+
+[package.metadata.trunk]
+# Trunk-specific metadata
+language = "tru"
+extensions = ["tru", "run"]
+compiler_version = "0.1.0"
+runtime_version = "0.1.0"
+
+[package.metadata.trung.compiler]
+optimizations = true
+simd = true
+memory_pools = true
+zero_copy = true
+
+[package.metadata.trung.runtime]
+string_interning = true
+cache_size = 10000
+memory_pools = [32, 64, 128, 256, 512, 1024, 2048, 4096]
+
+[package.metadata.wasm-pack]
+# WASM packaging configuration
+name = "trunk_lang"
+target = "web"
+mode = "normal"
+
+[workspace]
+members = [
+    "src/utils",
+    "src/infrastructure", 
+    "src/domain",
+    "src/secure",
+    "src/aimodels",
+    "src/models",
+    "src/tru_lang"
+]
+
+[workspace.dependencies]
+# Workspace-level dependencies for consistency
+tokio = { version = "1.45.0", features = ["macros", "rt-multi-thread", "full"] }
+serde = { version = "1.0.228", features = ["derive"] }
+uuid = { version = "1.11.0", features = ["v4", "serde"] }
+
+[scripts]
+# Build scripts
+build = "cargo build --release"
+build-wasm = "wasm-pack build --target web --out-dir pkg"
+test = "cargo test"
+bench = "cargo bench"
+lint = "cargo clippy -- -D warnings"
+format = "cargo fmt"
+doc = "cargo doc --open"
+
+# Custom scripts
+compile-tru = "cargo run --bin tru-compiler --"
+run-tru = "cargo run --bin trunk --"
+install = "cargo install --path ."
+clean = "cargo clean && rm -rf pkg/"
+
+[sgd-fsdp]
+# SGD/FSDP Configuration
+enabled = true
+sharded_training = true
+fully_sharded = true
+optimizer = "sgd"
+learning_rate = 0.001
+batch_size = 32
+gradient_accumulation_steps = 4
+
+[sgd-fsdp.model]
+model_type = "transformer"
+hidden_size = 768
+num_layers = 12
+num_attention_heads = 12
+max_sequence_length = 512
+
+[sgd-fsdp.training]
+epochs = 100
+warmup_steps = 1000
+weight_decay = 0.01
+adam_beta1 = 0.9
+adam_beta2 = 0.999
+adam_epsilon = 1e-8
+
+[sgd-fsdp.hardware]
+# Hardware configuration
+gpu_count = 4
+memory_per_gpu = "32GB"
+mixed_precision = true
+gradient_checkpointing = true
+
+[installer]
+# Installer configuration
+name = "trunk"
+version = "0.1.0"
+targets = ["x86_64-linux", "x86_64-windows", "x86_64-macos"]
+binary_name = "trunk"
+install_path = "/usr/local/bin"
+
+[installer.dioxus]
+# Dioxus GUI installer
+enabled = true
+gui = true
+auto_update = true
+telemetry = false
+
+[embedded]
+# Embedded framework configuration
+framework = "slint"
+wasm = true
+memory_limit = "64MB"
+stack_size = "1MB"
+heap_size = "32MB"
+
+[embedded.coin]
+# Coin mining/embedded features
+enabled = false
+algorithm = "sha256"
+difficulty = 1
+
+[ai-ml]
+# AI/ML Framework Configuration
+frameworks = ["burn", "candle"]
+models = ["transformer", "cnn", "rnn"]
+optimizers = ["sgd", "adam", "adamw"]
+schedulers = ["cosine", "linear", "exponential"]
+
+[ai-ml.wasm]
+# WASM AI/ML support
+enabled = true
+backend = "webgpu"
+precision = "f32"
+batch_size = 1
+
+[lib.cpp]
+# C++ library bindings
+enabled = true
+headers = ["include/trung.h"]
+libraries = ["trung_cpp"]
+link_type = "static"
+
+[python]
+# Python bindings
+enabled = true
+module_name = "trunk_lang"
+bindings = "pyo3"
+features = ["extension-module"]
+
+[open-code]
+# Open code framework integration
+enabled = true
+components = ["editor", "compiler", "debugger"]
+language_server = true
+syntax_highlighting = true
+
+

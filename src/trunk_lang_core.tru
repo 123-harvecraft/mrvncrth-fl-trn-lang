@@ -1,0 +1,65 @@
+// trunk_lang_core.tru — High-Performance Runtime Primitives
+// Port of src/trunk_lang_core.rs -> Trn Lang syntax
+
+use std::io;
+use std::collections;
+
+let TRN_VERSION   = "1.0.0";
+let TRN_EXTENSION = "tru";
+
+struct PerformanceMetrics {
+    pub ops_per_second:   float,
+    pub memory_usage_mb:  float,
+    pub cache_hit_rate:   float,
+    pub avg_latency_ms:   float,
+}
+
+fn metrics_new() -> PerformanceMetrics {
+    return PerformanceMetrics {
+        ops_per_second:  0.0,
+        memory_usage_mb: 0.0,
+        cache_hit_rate:  0.0,
+        avg_latency_ms:  0.0,
+    };
+}
+
+struct StringInterner {
+    pub counter: int,
+}
+
+fn interner_new() -> StringInterner {
+    return StringInterner { counter: 1 };
+}
+
+fn interner_intern(mut si: StringInterner, s: str) -> int {
+    let id = si.counter;
+    si.counter += 1;
+    return id;
+}
+
+struct LangConfig {
+    pub version:    str,
+    pub extension:  str,
+    pub crate_name: str,
+    pub debug:      bool,
+}
+
+fn config_default() -> LangConfig {
+    return LangConfig {
+        version:    TRN_VERSION,
+        extension:  TRN_EXTENSION,
+        crate_name: "tru_id_core",
+        debug:      false,
+    };
+}
+
+fn describe(cfg: LangConfig) -> str {
+    return "tru_id v" + cfg.version + " | ext=." + cfg.extension + " | crate=" + cfg.crate_name;
+}
+
+fn main() {
+    let cfg = config_default();
+    io::println(describe(cfg));
+    let m = metrics_new();
+    io::println("ops/s: " + m.ops_per_second);
+}

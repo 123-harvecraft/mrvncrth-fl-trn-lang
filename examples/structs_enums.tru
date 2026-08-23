@@ -1,0 +1,170 @@
+// structs_enums.tru — TRU structs, enums, impl, match
+// Run: tru_id run examples/structs_enums.tru
+
+// ── Enum ─────────────────────────────────────────────────────────────────────
+
+enum Shape {
+    Circle(float),
+    Rectangle(float, float),
+    Triangle(float, float, float),
+}
+
+fn area(s: Shape) -> float {
+    match s {
+        Shape::Circle(r)           => PI * r * r,
+        Shape::Rectangle(w, h)     => w * h,
+        Shape::Triangle(a, b, c)   => {
+            let p = (a + b + c) / 2.0;
+            sqrt(p * (p - a) * (p - b) * (p - c))
+        }
+    }
+}
+
+fn describe_shape(s: Shape) -> str {
+    match s {
+        Shape::Circle(_)       => "circle",
+        Shape::Rectangle(_, _) => "rectangle",
+        Shape::Triangle(_, _, _) => "triangle"
+    }
+}
+
+// ── Struct ───────────────────────────────────────────────────────────────────
+
+struct Point {
+    x: float,
+    y: float,
+}
+
+struct Vector2D {
+    dx: float,
+    dy: float,
+}
+
+fn point_distance(p1: Point, p2: Point) -> float {
+    let dx = p2.x - p1.x;
+    let dy = p2.y - p1.y;
+    return sqrt(dx * dx + dy * dy);
+}
+
+fn point_add(p: Point, v: Vector2D) -> Point {
+    return Point { x: p.x + v.dx, y: p.y + v.dy };
+}
+
+fn point_to_str(p: Point) -> str {
+    return "(" + to_str(p.x) + ", " + to_str(p.y) + ")";
+}
+
+// ── Option-style enum ─────────────────────────────────────────────────────────
+
+enum Maybe {
+    Some(int),
+    None,
+}
+
+fn safe_divide(a: int, b: int) -> Maybe {
+    if b == 0 {
+        return Maybe::None;
+    }
+    return Maybe::Some(a / b);
+}
+
+fn unwrap_or(m: Maybe, default: int) -> int {
+    match m {
+        Maybe::Some(v) => v,
+        Maybe::None    => default,
+    }
+}
+
+// ── Result-style enum ─────────────────────────────────────────────────────────
+
+enum TruResult {
+    Ok(str),
+    Err(str),
+}
+
+fn parse_positive(s: str) -> TruResult {
+    let n = to_int(s);
+    if n < 0 {
+        return TruResult::Err("expected positive number, got: " + s);
+    }
+    return TruResult::Ok("parsed: " + to_str(n));
+}
+
+// ── Linked list via enum ───────────────────────────────────────────────────────
+
+enum List {
+    Cons(int, int),   // value, next_index (simplified)
+    Nil,
+}
+
+fn list_sum(items: [int]) -> int {
+    let mut total = 0;
+    let mut i = 0;
+    while i < len(items) {
+        total += items[i];
+        i += 1;
+    }
+    return total;
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
+fn main() {
+    // Shapes
+    println("=== Shapes ===");
+    let c = Shape::Circle(5.0);
+    let r = Shape::Rectangle(4.0, 6.0);
+    let t = Shape::Triangle(3.0, 4.0, 5.0);
+
+    println("Circle   area = " + to_str(area(c)));
+    println("Rect     area = " + to_str(area(r)));
+    println("Triangle area = " + to_str(area(t)));
+
+    // Points and vectors
+    println("\n=== Points ===");
+    let origin = Point { x: 0.0, y: 0.0 };
+    let target = Point { x: 3.0, y: 4.0 };
+    let move_v = Vector2D { dx: 1.0, dy: 2.0 };
+
+    println("Origin : " + point_to_str(origin));
+    println("Target : " + point_to_str(target));
+    println("Distance: " + to_str(point_distance(origin, target)));
+
+    let moved = point_add(origin, move_v);
+    println("After move: " + point_to_str(moved));
+
+    // Maybe / safe divide
+    println("\n=== Safe Divide ===");
+    let r1 = safe_divide(10, 2);
+    let r2 = safe_divide(10, 0);
+    println("10 / 2  = " + to_str(unwrap_or(r1, -1)));
+    println("10 / 0  = " + to_str(unwrap_or(r2, -1)));
+
+    // TruResult
+    println("\n=== TruResult ===");
+    let results = [parse_positive("42"), parse_positive("-5")];
+    let mut i = 0;
+    while i < len(results) {
+        match results[i] {
+            TruResult::Ok(msg)  => println("  Ok:  " + msg),
+            TruResult::Err(msg) => println("  Err: " + msg),
+        }
+        i += 1;
+    }
+
+    // Pattern matching with guards
+    println("\n=== Pattern Matching with Guards ===");
+    let values = [0, 1, -5, 42, 100, 7];
+    let mut j = 0;
+    while j < len(values) {
+        let v = values[j];
+        let label = match v {
+            0              => "zero",
+            x              => if x < 0 { "negative" } else { if x > 99 { "large" } else { "positive" } }
+        };
+        println("  " + to_str(v) + " -> " + label);
+        j += 1;
+    }
+}
+
+main()

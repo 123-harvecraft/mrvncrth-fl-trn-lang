@@ -1,0 +1,266 @@
+// TRU Language Sample File
+// File extension: .tru
+// High-performance language that extends Rust with optimizations
+
+// Import TRU language features
+use trunk_lang::tru_lang::*;
+use trunk_lang::performance_prelude::*;
+
+// TRU function with built-in performance monitoring
+tru_fn create_embedding(text: &str) -> TruVector {
+    let runtime = get_tru_runtime();
+    let pool = runtime.get_memory_pool(512).unwrap();
+    
+    // Use memory pool for buffer
+    let mut buffer = pool.get();
+    buffer.clear();
+    buffer.resize(512, 0.0);
+    
+    // High-performance embedding generation
+    let bytes = text.as_bytes();
+    for (i, &byte) in bytes.iter().enumerate() {
+        buffer[i % 512] += byte as f32 / 255.0;
+    }
+    
+    // Return optimized vector
+    TruVector::new(buffer)
+}
+
+// TRU function for batch processing
+tru_fn batch_embeddings(texts: &[&str]) -> Vec<TruVector> {
+    let runtime = get_tru_runtime();
+    
+    // Process in parallel for better performance
+    texts.par_iter()
+        .map(|&text| {
+            let embedding = create_embedding(text);
+            embedding
+        })
+        .collect()
+}
+
+// TRU tensor operations with automatic memory management
+tru_fn create_tensor(shape: &[usize]) -> TruTensor {
+    let total_size: usize = shape.iter().product();
+    
+    // Use SIMD for initialization when available
+    if total_size > 1000 {
+        // Large tensor - use optimized initialization
+        TruTensor::random(shape.to_vec())
+    } else {
+        // Small tensor - use simple initialization
+        TruTensor::zeros(shape.to_vec())
+    }
+}
+
+// TRU string interning for zero-copy operations
+tru_fn process_texts(texts: &[String]) -> Vec<TruString> {
+    let runtime = get_tru_runtime();
+    let interner = runtime.string_interner.clone();
+    
+    texts.iter()
+        .map(|text| TruString::new(text, interner.clone()))
+        .collect()
+}
+
+// TRU high-performance similarity calculation
+tru_fn calculate_similarity(vec1: &TruVector, vec2: &TruVector) -> f32 {
+    // Use optimized cosine similarity
+    vec1.cosine_similarity(vec2)
+}
+
+// TRU matrix operations with automatic optimization
+tru_fn matrix_multiply(a: &TruTensor, b: &TruTensor) -> Option<TruTensor> {
+    // Check dimensions
+    if a.shape().len() != 2 || b.shape().len() != 2 {
+        return None;
+    }
+    
+    let (a_rows, a_cols) = (a.shape()[0], a.shape()[1]);
+    let (b_rows, b_cols) = (b.shape()[0], b.shape()[1]);
+    
+    if a_cols != b_rows {
+        return None;
+    }
+    
+    // Create result tensor
+    let mut result = TruTensor::zeros(vec![a_rows, b_cols]);
+    
+    // Optimized matrix multiplication
+    for i in 0..a_rows {
+        for j in 0..b_cols {
+            let mut sum = 0.0;
+            for k in 0..a_cols {
+                if let (Some(a_val), Some(b_val)) = (a.get(&[i, k]), b.get(&[k, j])) {
+                    sum += a_val * b_val;
+                }
+            }
+            result.set(&[i, j], sum);
+        }
+    }
+    
+    Some(result)
+}
+
+// TRU cache operations with automatic eviction
+tru_fn cached_computation(input: &str) -> TruVector {
+    let runtime = get_tru_runtime();
+    let cache_key = format!("compute_{}", input);
+    
+    // Try to get from cache first
+    if let Some(cached_result) = runtime.cache.get(&cache_key) {
+        // Deserialize cached result
+        let vector_data: Vec<f32> = bincode::deserialize(&cached_result).unwrap_or_default();
+        return TruVector::new(vector_data);
+    }
+    
+    // Compute result
+    let result = create_embedding(input);
+    
+    // Cache the result
+    if let Ok(serialized) = bincode::serialize(result.as_slice()) {
+        runtime.cache.put(cache_key, serialized);
+    }
+    
+    result
+}
+
+// TRU performance monitoring example
+tru_fn benchmark_operations() -> PerformanceStats {
+    let runtime = get_tru_runtime();
+    
+    // Clear previous metrics
+    if let Ok(mut metrics) = runtime.metrics.lock() {
+        metrics.clear();
+    }
+    
+    // Run benchmark
+    for _ in 0..10000 {
+        let _ = create_embedding("benchmark text");
+    }
+    
+    // Get performance stats
+    runtime.get_metric("create_embedding").unwrap_or_else(|| PerformanceStats {
+        call_count: 0,
+        avg_time_ns: 0,
+        min_time_ns: 0,
+        max_time_ns: 0,
+        ops_per_sec: 0.0,
+    })
+}
+
+// TRU main function with automatic optimizations
+tru_fn main() {
+    println!("TRU Language - High Performance Example");
+    
+    // Demonstrate string interning
+    let texts = vec![
+        "hello world".to_string(),
+        "tru language".to_string(),
+        "hello world".to_string(), // Duplicate - will be interned
+    ];
+    
+    let interned_texts = process_texts(&texts);
+    println!("Interned {} unique strings", interned_texts.len());
+    
+    // Demonstrate vector operations
+    let vec1 = TruVector::new(vec![1.0, 2.0, 3.0, 4.0]);
+    let vec2 = TruVector::new(vec![0.5, 1.5, 2.5, 3.5]);
+    
+    let similarity = calculate_similarity(&vec1, &vec2);
+    println!("Vector similarity: {}", similarity);
+    
+    // Demonstrate tensor operations
+    let tensor = create_tensor(&[3, 3, 3]);
+    println!("Created tensor with shape: {:?}", tensor.shape());
+    
+    // Demonstrate caching
+    let cached_result1 = cached_computation("test input");
+    let cached_result2 = cached_computation("test input"); // Should hit cache
+    
+    println!("Cache test: vectors equal? {}", 
+             cached_result1.as_slice() == cached_result2.as_slice());
+    
+    // Show performance metrics
+    let stats = benchmark_operations();
+    println!("Performance stats:");
+    println!("  Calls: {}", stats.call_count);
+    println!("  Avg time: {} ns", stats.avg_time_ns);
+    println!("  Ops/sec: {:.0}", stats.ops_per_sec);
+}
+
+// TRU type definitions with automatic optimizations
+type TruEmbedding = TruVector;
+type TruMatrix = TruTensor;
+type TruText = TruString;
+
+// TRU constants with compile-time optimization
+const TRU_EMBEDDING_SIZE: usize = 512;
+const TRU_CACHE_SIZE: usize = 10000;
+const TRU_BATCH_SIZE: usize = 32;
+
+// TRU enums with performance optimizations
+#[derive(Debug, Clone, Copy)]
+pub enum TruOptimizationLevel {
+    None = 0,
+    Basic = 1,
+    Aggressive = 2,
+    Maximum = 3,
+}
+
+// TRU struct with zero-copy design
+#[derive(Debug, Clone)]
+pub struct TruModel {
+    name: TruString,
+    embedding: TruEmbedding,
+    cache: TruCache<String, TruEmbedding>,
+}
+
+impl TruModel {
+    pub fn new(name: &str, embedding_size: usize) -> Self {
+        let runtime = get_tru_runtime();
+        
+        Self {
+            name: TruString::new(name, runtime.string_interner.clone()),
+            embedding: TruVector::zeros(embedding_size),
+            cache: TruCache::new(TRU_CACHE_SIZE),
+        }
+    }
+    
+    pub fn process_text(&mut self, text: &str) -> TruEmbedding {
+        // Use cached computation if available
+        if let Some(cached) = self.cache.get(text) {
+            return cached.clone();
+        }
+        
+        // Compute and cache
+        let embedding = create_embedding(text);
+        self.cache.put(text.to_string(), embedding.clone());
+        embedding
+    }
+}
+
+// TRU cache implementation
+pub struct TruCache<K, V> {
+    inner: crate::trunk_lang_core::FastCache<K, V>,
+}
+
+impl<K: Clone + Eq + std::hash::Hash, V: Clone> TruCache<K, V> {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            inner: crate::trunk_lang_core::FastCache::new(capacity),
+        }
+    }
+    
+    pub fn get(&self, key: &K) -> Option<V> {
+        self.inner.get(key)
+    }
+    
+    pub fn put(&self, key: K, value: V) {
+        self.inner.put(key, value);
+    }
+    
+    pub fn clear(&self) {
+        self.inner.clear();
+    }
+}
